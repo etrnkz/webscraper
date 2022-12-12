@@ -1,4 +1,6 @@
-bs4 
+
 pyrogram
 TgCrypto
-requests
+requests 
+Flask==2.2.2
+gunicorn==20.1.0
