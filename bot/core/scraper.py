@@ -79,18 +79,19 @@ def check_force_join(user_id, msg):
 def handle_callback(bot, callback_query):
     user_id = callback_query.from_user.id
     data = callback_query.data
+    msg = callback_query.message
     
     if data == "check_subscription":
         is_subscribed, not_subscribed = force_subscribe.check_all_subscriptions(user_id)
         if is_subscribed:
             bot.answer_callback_query(callback_query.id, "✅ Subscribed! Enjoy the bot.", show_alert=True)
-            callback_query.message.delete()
+            msg.delete()
         else:
             bot.answer_callback_query(callback_query.id, "❌ You haven't joined yet. Please join the channel first.", show_alert=True)
     
     elif data == "help":
         bot.answer_callback_query(callback_query.id)
-        callback_query.message.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
+        msg.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
     
     elif data == "stats":
         bot.answer_callback_query(callback_query.id)
@@ -98,7 +99,7 @@ def handle_callback(bot, callback_query):
         total = user['total_requests'] if user else 0
         errors = user['total_errors'] if user else 0
         success_rate = ((total - errors) / total * 100) if total > 0 else 0
-        callback_query.message.reply(
+        msg.reply(
             f"╔════════════════════════╗\n"
             f"║   📊 **Your Stats**     ║\n"
             f"╚════════════════════════╝\n\n"
@@ -106,6 +107,76 @@ def handle_callback(bot, callback_query):
             f"❌ **Errors:** `{errors}`\n"
             f"📈 **Success:** `{success_rate:.1f}%`"
         )
+    
+    # ── Broadcast flow ─────────────────────────────────────────
+    elif data.startswith("bcast_"):
+        if user_id not in config.ADMIN_IDS:
+            bot.answer_callback_query(callback_query.id, "⛔ Admins only.", show_alert=True)
+            return
+        bot.answer_callback_query(callback_query.id)
+        
+        draft = broadcast_drafts.get(user_id, {"msg_id": msg.id})
+        broadcast_drafts[user_id] = draft
+        
+        if data == "bcast_cancel":
+            broadcast_drafts.pop(user_id, None)
+            bot.edit_message_text("❌ Broadcast cancelled.", user_id, msg.id)
+            return
+        
+        elif data == "bcast_target_all":
+            draft["target"] = "all"
+            draft["_user_ids"] = [u["user_id"] for u in db.get_all_users()]
+            draft["user_count"] = len(draft["_user_ids"])
+            if not draft.get("format"):
+                _bcast_show_format(bot, user_id, msg.id)
+            else:
+                _bcast_prompt_content(bot, user_id, msg.id, is_button=(draft["format"] == "button"))
+        
+        elif data == "bcast_target_active":
+            draft["target"] = "active"
+            draft["_user_ids"] = [u["user_id"] for u in db.get_active_users(24)]
+            draft["user_count"] = len(draft["_user_ids"])
+            if not draft.get("format"):
+                _bcast_show_format(bot, user_id, msg.id)
+            else:
+                _bcast_prompt_content(bot, user_id, msg.id, is_button=(draft["format"] == "button"))
+        
+        elif data == "bcast_fmt_plain":
+            draft["format"] = "plain"
+            _bcast_prompt_content(bot, user_id, msg.id)
+        
+        elif data == "bcast_fmt_md":
+            draft["format"] = "md"
+            _bcast_prompt_content(bot, user_id, msg.id)
+        
+        elif data == "bcast_fmt_html":
+            draft["format"] = "html"
+            _bcast_prompt_content(bot, user_id, msg.id)
+        
+        elif data == "bcast_fmt_button":
+            draft["format"] = "button"
+            _bcast_prompt_content(bot, user_id, msg.id, is_button=True)
+        
+        elif data == "bcast_back":
+            if draft.get("awaiting_content") or draft.get("awaiting_buttons"):
+                draft.pop("awaiting_content", None)
+                draft.pop("awaiting_buttons", None)
+                _bcast_show_format(bot, user_id, msg.id)
+            elif draft.get("format") and draft.get("target"):
+                _bcast_show_format(bot, user_id, msg.id)
+            else:
+                _bcast_show_target(bot, user_id, msg.id)
+        
+        elif data == "bcast_confirm":
+            if not draft.get("content"):
+                bot.edit_message_text("❌ No content to send.", user_id, msg.id)
+                return
+            success, failed = _bcast_send(draft)
+            bot.edit_message_text(
+                f"╔══════════════════════════╗\n║  📢 **Broadcast Done**    ║\n╚══════════════════════════╝\n\n✅ **Sent:** `{success}`\n❌ **Failed:** `{failed}`\n👥 **Target:** `{draft.get('target', '?')}`",
+                user_id, msg.id
+            )
+            broadcast_drafts.pop(user_id, None)
 
 
 @bot.on_message(filters.private & filters.command('start'))
@@ -337,53 +408,127 @@ def admin_command(bot, msg):
 /userinfo — User details
 /ban — Ban a user
 /unban — Unban a user
+/promote — Send promotional broadcast
 /logs — View activity logs
 """
     msg.reply(admin_text)
 
-@bot.on_message(filters.private & filters.command('broadcast'))
-def broadcast_command(bot, msg):
-    user_id = msg.from_user.id
-    
-    if user_id not in config.ADMIN_IDS:
-        msg.reply(constants.ERROR_PERMISSION_DENIED)
-        logger.warning(f"Unauthorized broadcast attempt by user {user_id}")
+# ── Enhanced Broadcast System ──────────────────────────────────────
+BROADCAST_POLL_TIMEOUT = 120  # seconds before draft expires
+broadcast_drafts = {}  # user_id -> {target, format, content, buttons, msg_id}
+
+
+def _bcast_show_target(bot, user_id, edit_msg_id):
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 All Users", callback_data="bcast_target_all")],
+        [InlineKeyboardButton("🟢 Active (24h)", callback_data="bcast_target_active")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="bcast_cancel")],
+    ])
+    bot.edit_message_text(
+        "📢 **Broadcast — Step 1/3**\n\nChoose the target audience:",
+        user_id, edit_msg_id, reply_markup=buttons
+    )
+
+
+def _bcast_show_format(bot, user_id, edit_msg_id):
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Plain Text", callback_data="bcast_fmt_plain")],
+        [InlineKeyboardButton("✨ Markdown", callback_data="bcast_fmt_md")],
+        [InlineKeyboardButton("🔗 HTML", callback_data="bcast_fmt_html")],
+        [InlineKeyboardButton("🔘 With Buttons", callback_data="bcast_fmt_button")],
+        [InlineKeyboardButton("🔙 Back", callback_data="bcast_back")],
+    ])
+    bot.edit_message_text(
+        "📢 **Broadcast — Step 2/3**\n\nChoose the message format:",
+        user_id, edit_msg_id, reply_markup=buttons
+    )
+
+
+def _bcast_prompt_content(bot, user_id, edit_msg_id, is_button=False):
+    hint = (
+        "Send me the **message content** now.\n\n"
+        "You can use any Telegram formatting. I'll wait up to 2 minutes."
+    ) if not is_button else (
+        "Send me the **message content** first, then on the next step I'll ask for button configuration."
+    )
+    bot.edit_message_text(
+        f"📢 **Broadcast — Step 3/3**\n\n{hint}\n\n_Send your message as a reply to this._",
+        user_id, edit_msg_id
+    )
+    broadcast_drafts[user_id]["awaiting_content"] = True
+
+
+def _bcast_prompt_buttons(bot, user_id, edit_msg_id):
+    bot.edit_message_text(
+        "🔘 **Button Configuration**\n\n"
+        "Send button lines in this format (one per line):\n"
+        "`Button Label | https://url.com`\n\n"
+        "Example:\n"
+        "`Visit Website | https://example.com`\n"
+        "`Join Channel | https://t.me/...`\n\n"
+        "Send `/done` when finished, or `/skip` for no buttons.",
+        user_id, edit_msg_id
+    )
+    broadcast_drafts[user_id]["awaiting_buttons"] = True
+
+
+def _bcast_show_preview(bot, user_id, edit_msg_id):
+    draft = broadcast_drafts.get(user_id)
+    if not draft:
         return
+    target_label = "All Users" if draft["target"] == "all" else "Active Users (24h)"
+    fmt_label = {"plain": "Plain Text", "md": "Markdown", "html": "HTML", "button": "With Buttons"}.get(draft["format"], "Plain")
+    preview = draft["content"] or "_(empty)_"
+    buttons = draft.get("buttons", [])
+    btn_preview = ""
+    if buttons:
+        rows = []
+        for b in buttons:
+            label, url = b.split("|", 1)
+            rows.append(f"  🔘 `{label.strip()}` → {url.strip()}")
+        btn_preview = "\n" + "\n".join(rows)
     
-    broadcast_text = msg.text.split(maxsplit=1)
-    if len(broadcast_text) < 2:
-        msg.reply("❌ **Usage:** `/broadcast all/active <message>`\n\n**Examples:**\n`/broadcast all Hello everyone!`\n`/broadcast active Hey active users!`")
-        return
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"║  📢 **Broadcast Preview** ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"**Target:** `{target_label}`\n"
+        f"**Format:** `{fmt_label}`\n"
+        f"**Users:** `{draft['user_count']}`\n\n"
+        f"**Message:**\n{preview[:500]}{btn_preview}\n\n"
+        f"Ready to send?"
+    )
+    btns = [
+        [InlineKeyboardButton("✅ Confirm", callback_data="bcast_confirm"),
+         InlineKeyboardButton("❌ Cancel", callback_data="bcast_cancel")],
+        [InlineKeyboardButton("🔙 Back", callback_data="bcast_back")],
+    ]
+    bot.edit_message_text(text, user_id, edit_msg_id, reply_markup=InlineKeyboardMarkup(btns))
+
+
+def _bcast_send(draft, msg_reply_to=None):
+    target_users = draft.get("_user_ids", [])
+    content = draft["content"]
+    buttons = draft.get("buttons", [])
+    fmt = draft["format"]
     
-    full_text = broadcast_text[1]
-    parts = full_text.split(maxsplit=1)
+    parse_mode = None
+    if fmt == "md":
+        parse_mode = "markdown"
+    elif fmt == "html":
+        parse_mode = "html"
     
-    target = "all"
-    message = full_text
+    reply_markup = None
+    if buttons:
+        kb = [[InlineKeyboardButton(label.strip(), url=url.strip())] for label, url in (b.split("|", 1) for b in buttons)]
+        reply_markup = InlineKeyboardMarkup(kb)
     
-    if len(parts) >= 2 and parts[0].lower() in ['all', 'active']:
-        target = parts[0].lower()
-        message = parts[1]
-    
-    if target == 'active':
-        target_users = [u['user_id'] for u in db.get_active_users(24)]
-        target_desc = "active users (24h)"
-    else:
-        target_users = [u['user_id'] for u in db.get_all_users()]
-        target_desc = "all users"
-    
-    if not target_users:
-        msg.reply("❌ No users to broadcast to.")
-        return
-    
-    confirm_msg = msg.reply(f"📢 Broadcasting to {len(target_users)} {target_desc}...")
-    
-    success = 0
-    failed = 0
+    success, failed = 0, 0
     
     def send(uid):
+        nonlocal success, failed
         try:
-            bot.send_message(uid, f"📢 **Broadcast Message:**\n\n{message}")
+            bot.send_message(uid, content, parse_mode=parse_mode, reply_markup=reply_markup, disable_web_page_preview=True)
             return True
         except Exception:
             return False
@@ -393,7 +538,42 @@ def broadcast_command(bot, msg):
     
     success = sum(1 for r in results if r)
     failed = len(results) - success
-    confirm_msg.edit(f"╔══════════════════════════╗\n║  📢 **Broadcast Done**    ║\n╚══════════════════════════╝\n\n✅ **Sent:** `{success}`\n❌ **Failed:** `{failed}`\n👥 **Target:** `{target_desc}`")
+    return success, failed
+
+
+@bot.on_message(filters.private & filters.command('broadcast'))
+def broadcast_command(bot, msg):
+    user_id = msg.from_user.id
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        logger.warning(f"Unauthorized broadcast attempt by user {user_id}")
+        return
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 All Users", callback_data="bcast_target_all")],
+        [InlineKeyboardButton("🟢 Active (24h)", callback_data="bcast_target_active")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="bcast_cancel")],
+    ])
+    m = msg.reply("📢 **Broadcast — Step 1/3**\n\nChoose the target audience:", reply_markup=buttons)
+    broadcast_drafts[user_id] = {"msg_id": m.id}
+
+
+@bot.on_message(filters.private & filters.command('promote'))
+def promote_command(bot, msg):
+    """Shorthand to send a promotional broadcast with buttons"""
+    user_id = msg.from_user.id
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 All Users", callback_data="bcast_target_all")],
+        [InlineKeyboardButton("🟢 Active (24h)", callback_data="bcast_target_active")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="bcast_cancel")],
+    ])
+    m = msg.reply("📢 **Promotional Broadcast**\n\nChoose the target audience:", reply_markup=buttons)
+    broadcast_drafts[user_id] = {"msg_id": m.id, "format": "button"}
+    _bcast_show_target(bot, user_id, m.id)
 
 @bot.on_message(filters.private & filters.command('clearcache'))
 def clearcache_command(bot, msg):
@@ -613,9 +793,52 @@ def scrap(bot, msg):
         msg.reply(f"❌ **Download failed:** `{str(e)[:80]}`")
         logger.error(f"Scrap error for {url}: {e}")
 
+@bot.on_message(filters.private & filters.text)
+def broadcast_content_handler(bot, msg):
+    """Captures text sent during broadcast setup — stops show() from firing"""
+    user_id = msg.from_user.id
+    draft = broadcast_drafts.get(user_id)
+    if not draft:
+        return
+    
+    if draft.get("awaiting_buttons"):
+        text = msg.text.strip()
+        if text == "/done":
+            draft["awaiting_buttons"] = False
+            _bcast_show_preview(bot, user_id, draft["msg_id"])
+        elif text == "/skip":
+            draft["buttons"] = []
+            draft["awaiting_buttons"] = False
+            _bcast_show_preview(bot, user_id, draft["msg_id"])
+        else:
+            lines = text.split("\n")
+            buttons = []
+            for line in lines:
+                line = line.strip()
+                if "|" in line:
+                    label, url = line.split("|", 1)
+                    buttons.append(f"{label.strip()}|{url.strip()}")
+            draft["buttons"] = buttons
+            draft["awaiting_buttons"] = False
+            _bcast_show_preview(bot, user_id, draft["msg_id"])
+        return True  # stop propagation
+    
+    if draft.get("awaiting_content"):
+        draft["content"] = msg.text
+        draft["awaiting_content"] = False
+        if draft.get("format") == "button":
+            _bcast_prompt_buttons(bot, user_id, draft["msg_id"])
+        else:
+            _bcast_show_preview(bot, user_id, draft["msg_id"])
+        return True  # stop propagation
+
+    return
+
        
 @bot.on_message(filters.private & filters.text)
 def show(bot, msg):
+    if broadcast_drafts.get(msg.from_user.id):
+        return
     msg.reply(
         text="╔════════════════════════════════╗\n║  ❌ **Invalid Input**         ║\n╚════════════════════════════════╝\n\nYour message doesn't look like a valid URL.\n\n**Please send a link starting with:**\n`https://www.example.com`\n\nNeed help? Contact the [Developer](https://t.me/e_phador)",
         disable_web_page_preview=True,
