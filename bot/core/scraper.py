@@ -868,6 +868,3 @@ def logs_command(bot, msg):
         rows = db.get_recent_activities(30)
         lines = [f"{r['timestamp'][:19]} | U{r['user_id']} | {r['action']}" for r in rows]
         msg.reply(f"📋 **Recent Logs:**\n\n```\n{chr(10).join(lines) or 'No logs'}\n```")
-    
-logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
-bot.run()
