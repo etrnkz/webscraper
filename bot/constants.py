@@ -10,11 +10,9 @@ WELCOME_MESSAGE = """
 ║   👋 **Welcome {name}!**       ║
 ╚══════════════════════════════╝
 
-I'm a **webpage source code extractor**. Send me any URL and I'll fetch the HTML source for you — packed in a neat `.zip` file.
+I'm a **webpage source code extractor**. Send me any URL and I'll download the entire website for you — packed in a neat `.zip` file.
 
 ▸ Use /help to explore all commands
-
-**🎫 Free uses:** {free_uses} remaining
 """
 
 HELP_MESSAGE = """

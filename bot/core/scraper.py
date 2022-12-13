@@ -97,8 +97,6 @@ def handle_callback(bot, callback_query):
         user = db.get_user(user_id)
         total = user['total_requests'] if user else 0
         errors = user['total_errors'] if user else 0
-        usage = db.get_usage_count(user_id)
-        free_left = max(0, config.FREE_USAGE_LIMIT - usage)
         success_rate = ((total - errors) / total * 100) if total > 0 else 0
         callback_query.message.reply(
             f"╔════════════════════════╗\n"
@@ -106,8 +104,7 @@ def handle_callback(bot, callback_query):
             f"╚════════════════════════╝\n\n"
             f"✅ **Requests:** `{total}`\n"
             f"❌ **Errors:** `{errors}`\n"
-            f"📈 **Success:** `{success_rate:.1f}%`\n"
-            f"🎫 **Free uses left:** `{free_left}`"
+            f"📈 **Success:** `{success_rate:.1f}%`"
         )
 
 
@@ -118,8 +115,6 @@ def start(bot, msg):
     first_name = msg.from_user.first_name
     
     db.register_user(user_id, username, first_name)
-    usage = db.get_usage_count(user_id)
-    free_left = max(0, config.FREE_USAGE_LIMIT - usage)
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 Help", callback_data="help"),
@@ -128,7 +123,7 @@ def start(bot, msg):
     ])
     
     msg.reply(
-        constants.WELCOME_MESSAGE.format(name=first_name, free_uses=free_left),
+        constants.WELCOME_MESSAGE.format(name=first_name),
         reply_markup=buttons
     )
 
@@ -142,8 +137,6 @@ def stats_command(bot, msg):
     user = db.get_user(user_id)
     total = user['total_requests'] if user else 0
     errors = user['total_errors'] if user else 0
-    usage = db.get_usage_count(user_id)
-    free_left = max(0, config.FREE_USAGE_LIMIT - usage)
     success_rate = ((total - errors) / total * 100) if total > 0 else 0
     msg.reply(
         f"╔════════════════════════╗\n"
@@ -151,8 +144,7 @@ def stats_command(bot, msg):
         f"╚════════════════════════╝\n\n"
         f"✅ **Requests:** `{total}`\n"
         f"❌ **Errors:** `{errors}`\n"
-        f"📈 **Success:** `{success_rate:.1f}%`\n"
-        f"🎫 **Free uses left:** `{free_left}`"
+        f"📈 **Success:** `{success_rate:.1f}%`"
     )
 
 @bot.on_message(filters.private & filters.command('version'))
