@@ -839,6 +839,8 @@ def broadcast_content_handler(bot, msg):
 def show(bot, msg):
     if broadcast_drafts.get(msg.from_user.id):
         return
+    if msg.text.startswith("/"):
+        return
     msg.reply(
         text="╔════════════════════════════════╗\n║  ❌ **Invalid Input**         ║\n╚════════════════════════════════╝\n\nYour message doesn't look like a valid URL.\n\n**Please send a link starting with:**\n`https://www.example.com`\n\nNeed help? Contact the [Developer](https://t.me/e_phador)",
         disable_web_page_preview=True,
