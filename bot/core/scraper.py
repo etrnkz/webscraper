@@ -1,14 +1,12 @@
-import requests 
-from bs4 import BeautifulSoup 
+import requests
+from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 import os
 import logging
 import re
 from urllib.parse import urlparse
-from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 import bot.config as config
-import chardet
 import time
 from bot.utils.helpers import sanitize_filename, format_file_size, extract_domain
 from bot import constants
@@ -19,11 +17,12 @@ from bot.modules import media_extractor
 import shutil
 from bot.modules.web_archiver import DownloadManager
 import zipfile
-from bot.modules.robots_handler import robots_checker
+import io
+from concurrent.futures import ThreadPoolExecutor
 from bot.modules.metadata_parser import extract_metadata, format_metadata
-from bot.admin.panel import admin_panel
-from bot.admin.activity_tracker import activity_logger
+from bot import database as db
 from bot.plugins.force_subscribe import ForceSubscribe
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Validate configuration on startup
 config.validate_config()
@@ -37,6 +36,10 @@ logging.basicConfig(
     format=config.LOG_FORMAT
 )
 logger = logging.getLogger(__name__)
+
+# Thread pool for concurrent downloads
+download_executor = ThreadPoolExecutor(max_workers=20)
+
 
 # Load credentials from environment variables
 API_ID = config.API_ID
@@ -52,43 +55,62 @@ bot = Client(
 
 # Initialize force subscribe after bot is defined
 force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
+if config.FORCE_JOIN_CHANNEL and config.FORCE_JOIN_CHANNEL not in force_subscribe.channel_ids:
+    force_subscribe.add_channel(config.FORCE_JOIN_CHANNEL)
 
-# Rate limiting: track user requests
-user_requests = defaultdict(list)
-daily_requests = defaultdict(list)  # Track daily requests
-request_stats = defaultdict(int)  # Track total requests per user
-error_stats = defaultdict(int)  # Track errors per user
 bot_start_time = datetime.now()  # Track bot uptime
 
 
-def check_rate_limit(user_id):
-    """Check if user has exceeded rate limit"""
-    now = datetime.now()
-    minute_ago = now - timedelta(minutes=1)
-    
-    # Clean old requests
-    user_requests[user_id] = [req_time for req_time in user_requests[user_id] if req_time > minute_ago]
-    
-    if len(user_requests[user_id]) >= config.RATE_LIMIT:
-        return False
-    
-    user_requests[user_id].append(now)
+def check_force_join(user_id, msg):
+    """Force user to join channel after free usage limit"""
+    usage = db.get_usage_count(user_id)
+    if usage >= config.FREE_USAGE_LIMIT:
+        is_subscribed, not_subscribed = force_subscribe.check_all_subscriptions(user_id)
+        if not is_subscribed:
+            buttons = force_subscribe.create_join_buttons(not_subscribed)
+            msg.reply(
+                force_subscribe.get_force_subscribe_message(not_subscribed),
+                reply_markup=buttons
+            )
+            return False
     return True
 
 
-def check_daily_limit(user_id):
-    """Check if user has exceeded daily limit"""
-    now = datetime.now()
-    day_ago = now - timedelta(days=1)
+@bot.on_callback_query()
+def handle_callback(bot, callback_query):
+    user_id = callback_query.from_user.id
+    data = callback_query.data
     
-    # Clean old requests
-    daily_requests[user_id] = [req_time for req_time in daily_requests[user_id] if req_time > day_ago]
+    if data == "check_subscription":
+        is_subscribed, not_subscribed = force_subscribe.check_all_subscriptions(user_id)
+        if is_subscribed:
+            bot.answer_callback_query(callback_query.id, "✅ Subscribed! Enjoy the bot.", show_alert=True)
+            callback_query.message.delete()
+        else:
+            bot.answer_callback_query(callback_query.id, "❌ You haven't joined yet. Please join the channel first.", show_alert=True)
     
-    if len(daily_requests[user_id]) >= config.DAILY_LIMIT:
-        return False
+    elif data == "help":
+        bot.answer_callback_query(callback_query.id)
+        callback_query.message.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
     
-    daily_requests[user_id].append(now)
-    return True
+    elif data == "stats":
+        bot.answer_callback_query(callback_query.id)
+        user = db.get_user(user_id)
+        total = user['total_requests'] if user else 0
+        errors = user['total_errors'] if user else 0
+        usage = db.get_usage_count(user_id)
+        free_left = max(0, config.FREE_USAGE_LIMIT - usage)
+        success_rate = ((total - errors) / total * 100) if total > 0 else 0
+        callback_query.message.reply(
+            f"╔════════════════════════╗\n"
+            f"║   📊 **Your Stats**     ║\n"
+            f"╚════════════════════════╝\n\n"
+            f"✅ **Requests:** `{total}`\n"
+            f"❌ **Errors:** `{errors}`\n"
+            f"📈 **Success:** `{success_rate:.1f}%`\n"
+            f"🎫 **Free uses left:** `{free_left}`"
+        )
+
 
 @bot.on_message(filters.private & filters.command('start'))
 def start(bot, msg):
@@ -96,10 +118,20 @@ def start(bot, msg):
     username = msg.from_user.username
     first_name = msg.from_user.first_name
     
-    # Register user in admin panel
-    admin_panel.register_user(user_id, username, first_name)
+    db.register_user(user_id, username, first_name)
+    usage = db.get_usage_count(user_id)
+    free_left = max(0, config.FREE_USAGE_LIMIT - usage)
     
-    msg.reply(constants.WELCOME_MESSAGE.format(name=first_name))
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Help", callback_data="help"),
+         InlineKeyboardButton("📊 Stats", callback_data="stats")],
+        [InlineKeyboardButton("👨‍💻 Developer", url="https://t.me/e_phador")],
+    ])
+    
+    msg.reply(
+        constants.WELCOME_MESSAGE.format(name=first_name, free_uses=free_left),
+        reply_markup=buttons
+    )
 
 @bot.on_message(filters.private & filters.command('help'))
 def help_command(bot, msg):
@@ -108,33 +140,47 @@ def help_command(bot, msg):
 @bot.on_message(filters.private & filters.command('stats'))
 def stats_command(bot, msg):
     user_id = msg.from_user.id
-    total = request_stats.get(user_id, 0)
-    errors = error_stats.get(user_id, 0)
+    user = db.get_user(user_id)
+    total = user['total_requests'] if user else 0
+    errors = user['total_errors'] if user else 0
+    usage = db.get_usage_count(user_id)
+    free_left = max(0, config.FREE_USAGE_LIMIT - usage)
     success_rate = ((total - errors) / total * 100) if total > 0 else 0
-    msg.reply(f"📊 **Your Statistics:**\n\n✅ Total requests: {total}\n❌ Errors: {errors}\n📈 Success rate: {success_rate:.1f}%")
+    msg.reply(
+        f"╔════════════════════════╗\n"
+        f"║   📊 **Your Stats**     ║\n"
+        f"╚════════════════════════╝\n\n"
+        f"✅ **Requests:** `{total}`\n"
+        f"❌ **Errors:** `{errors}`\n"
+        f"📈 **Success:** `{success_rate:.1f}%`\n"
+        f"🎫 **Free uses left:** `{free_left}`"
+    )
 
 @bot.on_message(filters.private & filters.command('version'))
 def version_command(bot, msg):
-    msg.reply(f"🤖 **{constants.BOT_NAME}**\nVersion: `{constants.BOT_VERSION}`")
+    msg.reply(
+        f"╔════════════════════════╗\n"
+        f"║   🤖 **Bot Info**       ║\n"
+        f"╚════════════════════════╝\n\n"
+        f"**Name:** `{constants.BOT_NAME}`\n"
+        f"**Version:** `{constants.BOT_VERSION}`\n"
+        f"**Python:** `3.10+`"
+    )
 
 @bot.on_message(filters.private & filters.command('info'))
 def info_command(bot, msg):
     user_id = msg.from_user.id
-    
-    # Extract URL from command
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
-        msg.reply("❌ Usage: /info <url>\n\nExample: /info https://example.com")
+        msg.reply("❌ **Usage:** `/info <url>`\nExample: `/info https://example.com`")
         return
     
     url = parts[1].strip()
-    
-    # Validate URL
     if not is_valid_url(url):
         msg.reply(constants.ERROR_INVALID_URL)
         return
     
-    processing_msg = msg.reply("⏳ Fetching page information...")
+    processing_msg = msg.reply("🔍 **Fetching page info...**")
     
     try:
         headers = get_random_headers()
@@ -144,44 +190,35 @@ def info_command(bot, msg):
         
         soup = BeautifulSoup(response.content, 'html.parser')
         metadata = extract_metadata(soup)
+        meta_text = format_metadata(metadata)
         
-        # Format response
-        info_text = f"ℹ️ **Page Information**\n\n🌐 **URL:** `{url}`\n\n{format_metadata(metadata)}"
-        
-        msg.reply(info_text, disable_web_page_preview=True)
+        msg.reply(
+            f"╔════════════════════════╗\n"
+            f"║   ℹ️ **Page Info**      ║\n"
+            f"╚════════════════════════╝\n\n"
+            f"🔗 **URL:** `{url}`\n\n{meta_text}",
+            disable_web_page_preview=True
+        )
         processing_msg.delete()
         
     except Exception as e:
-        msg.reply(f"❌ Failed to fetch page info: {str(e)}")
-        logger.error(f"Info command error for {url}: {e}")
+        msg.reply(f"❌ **Failed:** `{str(e)[:80]}`")
+        logger.error(f"Info error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('media'))
 def media_command(bot, msg):
     user_id = msg.from_user.id
-    
-    # Extract URL from command
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
-        msg.reply("❌ Usage: /media <url>\n\nExample: /media https://example.com")
+        msg.reply("❌ **Usage:** `/media <url>`\nExample: `/media https://example.com`")
         return
     
     url = parts[1].strip()
-    
-    # Check rate limits
-    if not check_rate_limit(user_id):
-        msg.reply(constants.ERROR_RATE_LIMIT)
-        return
-    
-    if not check_daily_limit(user_id):
-        msg.reply("📅 Daily limit reached (15 requests/day).")
-        return
-    
-    # Validate URL
     if not is_valid_url(url):
         msg.reply(constants.ERROR_INVALID_URL)
         return
     
-    processing_msg = msg.reply("⏳ Fetching media from webpage...")
+    processing_msg = msg.reply("🖼️ **Scanning page for media...**")
     
     try:
         headers = get_random_headers()
@@ -193,36 +230,28 @@ def media_command(bot, msg):
         domain = extract_domain(url)
         output_dir = f"media_{domain}_{user_id}"
         
-        processing_msg.edit("📥 Downloading media files...")
-        
-        # Download images only for now
+        processing_msg.edit("📥 **Downloading media...**")
         downloaded = media_extractor.scrape_media(url, soup, output_dir, ['images'])
         
         if downloaded:
-            processing_msg.edit(f"📤 Sending {len(downloaded)} files...")
-            
-            for filepath in downloaded[:5]:  # Send max 5 files
+            processing_msg.edit(f"📤 **Sending {len(downloaded)} files...**")
+            for filepath in downloaded[:5]:
                 try:
                     msg.reply_document(filepath)
                 except Exception as e:
                     logger.error(f"Failed to send {filepath}: {e}")
-            
-            msg.reply(f"✅ Downloaded {len(downloaded)} media files from {domain}")
+            msg.reply(f"✅ **Done!** Downloaded `{len(downloaded)}` media files from `{domain}`")
         else:
-            msg.reply("❌ No media files found on this page.")
+            msg.reply(f"❌ **No media found** on `{domain}`")
         
-        # Cleanup
-        try:
-            shutil.rmtree(output_dir)
-        except Exception:
-            pass
-        
+        shutil.rmtree(output_dir, ignore_errors=True)
         processing_msg.delete()
-        request_stats[user_id] += 1
+        db.increment_requests(user_id, success=True)
         
     except Exception as e:
-        msg.reply(f"❌ Failed to scrape media: {str(e)}")
-        logger.error(f"Media scraping error for {url}: {e}")
+        shutil.rmtree(output_dir, ignore_errors=True)
+        msg.reply(f"❌ **Failed:** `{str(e)[:80]}`")
+        logger.error(f"Media error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('archive'))
 def archive_command(bot, msg):
@@ -235,22 +264,11 @@ def archive_command(bot, msg):
         return
     
     url = parts[1].strip()
-    
-    # Check rate limits
-    if not check_rate_limit(user_id):
-        msg.reply(constants.ERROR_RATE_LIMIT)
-        return
-    
-    if not check_daily_limit(user_id):
-        msg.reply("📅 Daily limit reached (15 requests/day).")
-        return
-    
-    # Validate URL
     if not is_valid_url(url):
         msg.reply(constants.ERROR_INVALID_URL)
         return
     
-    processing_msg = msg.reply("⏳ Starting recursive download...\n\nThis may take a few minutes.")
+    processing_msg = msg.reply("📦 **Starting recursive download...**\n\n⏳ This may take a few minutes.")
     
     try:
         domain = extract_domain(url)
@@ -275,24 +293,19 @@ def archive_command(bot, msg):
             # Send archive
             msg.reply_document(
                 zip_filename,
-                caption=f"✅ **Website Archive**\n\n🌐 Domain: `{domain}`\n📄 Pages: {stats['total_downloaded']}\n📦 Size: {format_file_size(os.path.getsize(zip_filename))}"
+                caption=f"╔════════════════════════╗\n║   📦 **Archive Ready**  ║\n╚════════════════════════╝\n\n🌐 **Domain:** `{domain}`\n📄 **Pages:** `{stats['total_downloaded']}`\n📦 **Size:** `{format_file_size(os.path.getsize(zip_filename))}`"
             )
             
-            # Cleanup
-            try:
-                os.remove(zip_filename)
-                shutil.rmtree(output_dir)
-            except Exception:
-                pass
-            
+            os.remove(zip_filename)
+            shutil.rmtree(output_dir, ignore_errors=True)
             processing_msg.delete()
         else:
-            msg.reply("❌ Failed to download any pages from the website.")
+            msg.reply(f"❌ **No pages downloaded** from `{domain}`")
         
-        request_stats[user_id] += 1
+        db.increment_requests(user_id, success=True)
         
     except Exception as e:
-        msg.reply(f"❌ Archive failed: {str(e)}")
+        msg.reply(f"❌ **Archive failed:** `{str(e)[:80]}`")
         logger.error(f"Archive error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('admin'))
@@ -304,40 +317,36 @@ def admin_command(bot, msg):
         logger.warning(f"Unauthorized admin access attempt by user {user_id}")
         return
     
-    total_users = len(request_stats)
-    total_requests = sum(request_stats.values())
-    total_errors = sum(error_stats.values())
-    avg_requests = total_requests / total_users if total_users > 0 else 0
+    stats = db.get_statistics()
     uptime = datetime.now() - bot_start_time
-    uptime_str = str(uptime).split('.')[0]  # Remove microseconds
+    uptime_str = str(uptime).split('.')[0]
     
-    # Get performance stats
     from bot.monitoring.performance import get_performance_stats
     perf_stats = get_performance_stats()
     
     admin_text = f"""
-🔧 **Admin Statistics:**
+╔══════════════════════════════╗
+║      🔧 **Admin Panel**       ║
+╚══════════════════════════════╝
 
-👥 Total users: {total_users}
-📊 Total requests: {total_requests}
-❌ Total errors: {total_errors}
-📈 Avg requests/user: {avg_requests:.2f}
-⏰ Uptime: {uptime_str}
-💾 Cache hit rate: {perf_stats['cache_hit_rate']:.1f}%
-⚡ Rate limit: {config.RATE_LIMIT}/min
-📅 Daily limit: {config.DAILY_LIMIT}/day
-💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
-🔄 Max retries: {config.MAX_RETRIES}
+**📊 Statistics:**
+👥 **Users:** `{stats['total_users']}`
+📊 **Requests:** `{stats['total_requests']}`
+❌ **Errors:** `{stats['total_errors']}`
+📈 **Avg/User:** `{(stats['total_requests'] / stats['total_users']) if stats['total_users'] > 0 else 0:.2f}`
+⏰ **Uptime:** `{uptime_str}`
+💾 **Cache hit:** `{perf_stats['cache_hit_rate']:.1f}%`
+📦 **Max file:** `{config.MAX_FILE_SIZE // (1024*1024)}MB`
 
-**Commands:**
-/broadcast <message> - Send message to all users
-/clearcache - Clear all cached content
-/users - List all users
-/topusers - Show top 10 users by activity
-/userinfo <user_id> - Get detailed user information
-/ban <user_id> - Ban a user
-/unban <user_id> - Unban a user
-/logs [user_id] - View activity logs
+**🛠 Commands:**
+/broadcast — Broadcast to all users
+/clearcache — Clear cached content
+/users — List all users
+/topusers — Top 10 users
+/userinfo — User details
+/ban — Ban a user
+/unban — Unban a user
+/logs — View activity logs
 """
     msg.reply(admin_text)
 
@@ -350,16 +359,14 @@ def broadcast_command(bot, msg):
         logger.warning(f"Unauthorized broadcast attempt by user {user_id}")
         return
     
-    # Extract message after command
     broadcast_text = msg.text.split(maxsplit=1)
     if len(broadcast_text) < 2:
-        msg.reply("❌ Usage: /broadcast <message>\n\nOptions:\n/broadcast all <message> - Send to all users\n/broadcast active <message> - Send to active users (24h)")
+        msg.reply("❌ **Usage:** `/broadcast all/active <message>`\n\n**Examples:**\n`/broadcast all Hello everyone!`\n`/broadcast active Hey active users!`")
         return
     
     full_text = broadcast_text[1]
     parts = full_text.split(maxsplit=1)
     
-    # Check for targeting
     target = "all"
     message = full_text
     
@@ -367,34 +374,35 @@ def broadcast_command(bot, msg):
         target = parts[0].lower()
         message = parts[1]
     
-    # Get target users
     if target == 'active':
-        target_users = [uid for uid, _ in admin_panel.get_active_users(24)]
+        target_users = [u['user_id'] for u in db.get_active_users(24)]
         target_desc = "active users (24h)"
     else:
-        target_users = list(admin_panel.get_all_users().keys())
+        target_users = [u['user_id'] for u in db.get_all_users()]
         target_desc = "all users"
     
     if not target_users:
         msg.reply("❌ No users to broadcast to.")
         return
     
-    # Confirm broadcast
     confirm_msg = msg.reply(f"📢 Broadcasting to {len(target_users)} {target_desc}...")
     
     success = 0
     failed = 0
     
-    for uid in target_users:
+    def send(uid):
         try:
             bot.send_message(uid, f"📢 **Broadcast Message:**\n\n{message}")
-            success += 1
-            time.sleep(0.05)  # Small delay to avoid flooding
-        except Exception as e:
-            failed += 1
-            logger.error(f"Failed to send broadcast to {uid}: {e}")
+            return True
+        except Exception:
+            return False
     
-    confirm_msg.edit(f"✅ Broadcast complete!\n\n✓ Sent: {success}\n✗ Failed: {failed}\n📊 Target: {target_desc}")
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        results = list(ex.map(send, target_users))
+    
+    success = sum(1 for r in results if r)
+    failed = len(results) - success
+    confirm_msg.edit(f"╔══════════════════════════╗\n║  📢 **Broadcast Done**    ║\n╚══════════════════════════╝\n\n✅ **Sent:** `{success}`\n❌ **Failed:** `{failed}`\n👥 **Target:** `{target_desc}`")
 
 @bot.on_message(filters.private & filters.command('clearcache'))
 def clearcache_command(bot, msg):
@@ -415,48 +423,48 @@ def clearcache_command(bot, msg):
 @bot.on_message(filters.private & filters.command('users'))
 def users_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
     
-    stats = admin_panel.get_statistics()
-    active_users = admin_panel.get_active_users(24)
+    stats = db.get_statistics()
+    all_users = db.get_all_users()
+    lines = []
+    for i, u in enumerate(all_users[:20], 1):
+        name = u['first_name'] or u['username'] or f"User {u['user_id']}"
+        status = "🚫" if not u['is_active'] else "✅"
+        lines.append(f"{i}. {status} `{u['user_id']}` {name} - {u['total_requests']} req")
     
-    user_list = admin_panel.format_user_list(active_users, limit=20)
-    
-    users_text = f"""
-👥 **User Management**
+    msg.reply(f"""
+╔══════════════════════════════╗
+║     👥 **User Management**    ║
+╚══════════════════════════════╝
 
-📊 **Statistics:**
-Total users: {stats['total_users']}
-Active (24h): {stats['active_24h']}
-Total requests: {stats['total_requests']}
-Total errors: {stats['total_errors']}
-Blocked requests: {stats['total_blocks']}
+📊 **Total:** `{stats['total_users']}`  |  **Active (24h):** `{stats['active_24h']}`
+📈 **Requests:** `{stats['total_requests']}`  |  ❌ **Errors:** `{stats['total_errors']}`
 
-**Active Users (Last 24h):**
-{user_list}
-"""
-    msg.reply(users_text)
+**Recent Users:**
+{chr(10).join(lines) if lines else "No users"}
+""")
 
 @bot.on_message(filters.private & filters.command('topusers'))
 def topusers_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
     
-    top_users = admin_panel.get_top_users(10)
-    user_list = admin_panel.format_user_list(top_users, limit=10)
+    top = db.get_top_users(10)
+    lines = []
+    for i, u in enumerate(top, 1):
+        name = u['first_name'] or u['username'] or f"User {u['user_id']}"
+        lines.append(f"{i}. `{u['user_id']}` {name} - {u['total_requests']} req ({u['total_errors']} err)")
     
-    msg.reply(f"🏆 **Top 10 Users by Activity:**\n\n{user_list}")
+    msg.reply(f"╔══════════════════════════╗\n║   🏆 **Top 10 Users**    ║\n╚══════════════════════════╝\n\n{chr(10).join(lines) if lines else 'No data'}")
 
 @bot.on_message(filters.private & filters.command('userinfo'))
 def userinfo_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
@@ -467,45 +475,40 @@ def userinfo_command(bot, msg):
         return
     
     try:
-        target_user_id = int(parts[1])
-        user_info = admin_panel.get_user_info(target_user_id)
-        
-        if not user_info or not user_info['first_seen']:
-            msg.reply(f"❌ User {target_user_id} not found.")
+        target = int(parts[1])
+        u = db.get_user(target)
+        if not u or not u['first_seen']:
+            msg.reply(f"❌ User {target} not found.")
             return
         
-        name = user_info['first_name'] or user_info['username'] or f"User {target_user_id}"
-        status = "🚫 Banned" if not user_info['is_active'] else "✅ Active"
+        name = u['first_name'] or u['username'] or f"User {target}"
+        status = "🚫 Banned" if not u['is_active'] else "✅ Active"
+        total, errs = u['total_requests'], u['total_errors']
+        rate = ((total - errs) / total * 100) if total > 0 else 0.0
         
-        info_text = f"""
-👤 **User Information**
+        msg.reply(f"""
+╔══════════════════════════╗
+║    👤 **User Info**       ║
+╚══════════════════════════╝
 
-**ID:** `{target_user_id}`
+**ID:** `{target}`
 **Name:** {name}
-**Username:** @{user_info['username'] or 'N/A'}
+**Username:** @{u['username'] or 'N/A'}
 **Status:** {status}
 
-📊 **Activity:**
-Total requests: {user_info['total_requests']}
-Total errors: {user_info['total_errors']}
-Blocked requests: {user_info['blocked_count']}
-Success rate: {((user_info['total_requests'] - user_info['total_errors']) / user_info['total_requests'] * 100) if user_info['total_requests'] > 0 else 0.0:.1f}%
-
-⏰ **Timeline:**
-First seen: {user_info['first_seen'].strftime('%Y-%m-%d %H:%M')}
-Last seen: {user_info['last_seen'].strftime('%Y-%m-%d %H:%M')}
-"""
-        msg.reply(info_text)
+📊 **Requests:** `{total}`  |  **Errors:** `{errs}`  |  **Blocks:** `{u['blocked_count']}`
+📈 **Success:** `{rate:.1f}%`
+⏰ **First seen:** `{u['first_seen']}`  |  **Last seen:** `{u['last_seen']}`
+""")
     except ValueError:
-        msg.reply("❌ Invalid user ID. Must be a number.")
+        msg.reply("❌ Invalid ID.")
     except Exception as e:
-        msg.reply(f"❌ Error: {str(e)}")
+        msg.reply(f"❌ Error: {e}")
         logger.error(f"Userinfo error: {e}")
 
 @bot.on_message(filters.private & filters.command('ban'))
 def ban_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
@@ -516,29 +519,22 @@ def ban_command(bot, msg):
         return
     
     try:
-        target_user_id = int(parts[1])
-        
-        if target_user_id in config.ADMIN_IDS:
-            msg.reply("❌ Cannot ban an admin user.")
+        target = int(parts[1])
+        if target in config.ADMIN_IDS:
+            msg.reply("❌ Cannot ban an admin.")
             return
-        
-        admin_panel.ban_user(target_user_id)
-        msg.reply(f"✅ User {target_user_id} has been banned.")
-        
-        # Notify the banned user
+        db.ban_user(target)
+        msg.reply(f"✅ User {target} banned.")
         try:
-            bot.send_message(target_user_id, "🚫 You have been banned from using this bot.")
+            bot.send_message(target, "🚫 You have been banned.")
         except Exception:
             pass
     except ValueError:
-        msg.reply("❌ Invalid user ID. Must be a number.")
-    except Exception as e:
-        msg.reply(f"❌ Error: {str(e)}")
+        msg.reply("❌ Invalid ID.")
 
 @bot.on_message(filters.private & filters.command('unban'))
 def unban_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
@@ -549,19 +545,15 @@ def unban_command(bot, msg):
         return
     
     try:
-        target_user_id = int(parts[1])
-        admin_panel.unban_user(target_user_id)
-        msg.reply(f"✅ User {target_user_id} has been unbanned.")
-        
-        # Notify the user
+        target = int(parts[1])
+        db.unban_user(target)
+        msg.reply(f"✅ User {target} unbanned.")
         try:
-            bot.send_message(target_user_id, "✅ You have been unbanned. You can now use the bot again.")
+            bot.send_message(target, "✅ You have been unbanned.")
         except Exception:
             pass
     except ValueError:
-        msg.reply("❌ Invalid user ID. Must be a number.")
-    except Exception as e:
-        msg.reply(f"❌ Error: {str(e)}")
+        msg.reply("❌ Invalid ID.")
 
 
 	
@@ -571,199 +563,132 @@ def scrap(bot, msg):
     user_id = msg.from_user.id
     
     # Register user activity
-    admin_panel.register_user(user_id, msg.from_user.username, msg.from_user.first_name)
-    activity_logger.log_activity(user_id, "scrape_request", url)
+    db.register_user(user_id, msg.from_user.username, msg.from_user.first_name)
+    db.log_activity(user_id, "scrape_request", url)
     
     # Check if user is banned
-    if admin_panel.is_banned(user_id):
-        msg.reply("🚫 You have been banned from using this bot. Contact admin for more information.")
-        admin_panel.record_block(user_id)
-        logger.warning(f"Banned user {user_id} attempted to use bot")
+    if db.is_banned(user_id):
+        msg.reply("╔══════════════════════════╗\n║  🚫 **Access Denied**    ║\n╚══════════════════════════╝\n\nYou have been banned from using this bot.")
+        db.record_block(user_id)
         return
     
-    # Check rate limit
-    if not check_rate_limit(user_id):
-        msg.reply(constants.ERROR_RATE_LIMIT)
-        logger.warning(f"Rate limit exceeded for user {user_id}")
+    # Track free usage and force join check
+    if not check_force_join(user_id, msg):
         return
-    
-    # Check daily limit
-    if not check_daily_limit(user_id):
-        remaining_time = timedelta(days=1) - (datetime.now() - daily_requests[user_id][0])
-        hours = int(remaining_time.total_seconds() // 3600)
-        minutes = int((remaining_time.total_seconds() % 3600) // 60)
-        msg.reply(f"📅 Daily limit reached (15 requests/day). Try again in {hours}h {minutes}m.")
-        logger.warning(f"Daily limit exceeded for user {user_id}")
-        return
+    db.increment_usage(user_id)
     
     # Validate URL
     if not is_valid_url(url):
         msg.reply(constants.ERROR_INVALID_URL)
-        logger.warning(f"Invalid URL from user {user_id}: {url}")
         return
     
     # Check domain safety
     domain = extract_domain(url)
     if not is_safe_domain(domain):
-        msg.reply("⚠️ This domain is flagged as potentially unsafe. Request blocked.")
-        logger.warning(f"Unsafe domain blocked: {domain}")
+        msg.reply("⚠️ **Unsafe domain** — this URL has been blocked.")
+        db.record_block(user_id)
         return
     
-    # Check robots.txt
-    if not robots_checker.can_fetch(url):
-        msg.reply("🤖 This URL is disallowed by robots.txt. Respecting website's crawling policy.")
-        logger.info(f"URL blocked by robots.txt: {url}")
-        return
+    logger.info(f"Processing URL from user {user_id}: {url}")
     
-    logger.info(f"Processing URL request from user {user_id}: {url}")
-    
-    # Check cache first
+    # Check cache first (fast path)
     cached_content, cached_meta = cache.get_cached_content(url)
     if cached_content and cached_meta:
-        # Serve from cache
-        domain = extract_domain(url)
-        filename = sanitize_filename(f"source_{domain}.txt")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(cached_content)
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr(f"{domain}.html", cached_content)
+        zip_buf.seek(0)
         
         msg.reply_document(
-            filename,
-            caption=f"✅ **Source code (cached)**\n\n🌐 Domain: `{domain}`\n📦 Size: {format_file_size(len(cached_content))}\n🔤 Encoding: {cached_meta.get('encoding', 'utf-8')}\n💾 Cached"
+            zip_buf,
+            file_name=f"source_{domain}.zip",
+            caption=f"╔══════════════════════════╗\n║  ✅ **Source (cached)**   ║\n╚══════════════════════════╝\n\n🌐 `{domain}`  •  📦 {format_file_size(len(cached_content))}  •  💾 `cached`"
         )
-        
-        try:
-            os.remove(filename)
-        except Exception:
-            pass
-        
-        request_stats[user_id] += 1
-        logger.info(f"Served cached content for {url}")
+        db.increment_requests(user_id, success=True)
         return
     
     # Send processing message
-    processing_msg = msg.reply("⏳ Fetching webpage...")
+    processing_msg = msg.reply("⬇️ **Fetching page...**")
     start_time = time.time()
-    
-    # Retry logic
-    for attempt in range(config.MAX_RETRIES):
-        try:
-            # Use randomized headers and optional proxy
-            headers = get_random_headers()
-            proxies = config.get_proxies()
-            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers, proxies=proxies)
-            request.raise_for_status()
-            break
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-            if attempt < config.MAX_RETRIES - 1:
-                logger.warning(f"Attempt {attempt + 1} failed for {url}, retrying...")
-                time.sleep(config.REQUEST_DELAY * (attempt + 1))  # Exponential backoff
-                continue
-            else:
-                raise
-    
+
     try:
+        # Stream directly to ZIP in memory — no disk I/O
+        session = requests.Session()
+        session.headers.update(get_random_headers())
         
-        # Detect encoding
-        detected = chardet.detect(request.content)
-        encoding = detected['encoding'] or 'utf-8'
+        resp = session.get(url, timeout=config.REQUEST_TIMEOUT, proxies=config.get_proxies())
+        resp.raise_for_status()
         
-        # Check content size
-        content_length = request.headers.get('content-length')
-        if content_length and int(content_length) > config.MAX_FILE_SIZE:
-            msg.reply(f"❌ File too large. Maximum size is {config.MAX_FILE_SIZE // (1024*1024)}MB.")
-            logger.warning(f"File too large for {url}: {content_length} bytes")
+        content = resp.content
+        file_size = len(content)
+        
+        if file_size > config.MAX_FILE_SIZE:
+            msg.reply(f"❌ **File too large** — max `{config.MAX_FILE_SIZE // (1024*1024)}MB`")
             return
         
-        soup = BeautifulSoup(request.content, 'html.parser', from_encoding=encoding)
+        # Detect encoding (fast: just use apparent or utf-8)
+        try:
+            import cchardet as fast_detector
+            encoding = fast_detector.detect(content)['encoding'] or 'utf-8'
+        except ImportError:
+            encoding = resp.apparent_encoding or 'utf-8'
         
-        processing_msg.edit("📝 Generating source code file...")
+        text_content = content.decode('utf-8', errors='replace')
         
-        # Generate filename from URL
-        domain = extract_domain(url)
-        filename = sanitize_filename(f"source_{domain}.txt")
+        # Cache async
+        cache.save_to_cache(url, text_content, {'domain': domain, 'encoding': encoding, 'size': file_size})
         
-        # Write prettified HTML
-        with open(filename, 'w', encoding="utf-8") as parse:
-            prettified = soup.prettify()
-            parse.write(prettified)
+        # Build ZIP in memory
+        processing_msg.edit("📦 **Zipping...**")
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr(f"{domain}.html", text_content)
+        zip_buf.seek(0)
         
-        # Save to cache
-        cache.save_to_cache(url, prettified, {
-            'domain': domain,
-            'encoding': encoding,
-            'size': len(prettified)
-        })
-        
-        processing_msg.edit("📤 Sending file...")
-        
-        # Get file size
-        file_size = os.path.getsize(filename)
-        file_size_str = format_file_size(file_size)
-        
-        # Calculate processing time
+        processing_msg.edit("📤 **Sending...**")
         processing_time = time.time() - start_time
         
         msg.reply_document(
-            filename,
+            zip_buf,
+            file_name=f"source_{domain}.zip",
             caption=constants.SUCCESS_EXTRACTED.format(
                 domain=domain,
-                size=file_size_str,
+                size=format_file_size(file_size),
                 encoding=encoding
-            ) + f"\n⏱️ Time: {processing_time:.2f}s"
+            ) + f" | ⏱️ {processing_time:.2f}s"
         )
         
-        try:
-            processing_msg.delete()
-        except Exception:
-            pass  # Message might already be deleted
-            
-        request_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=True)
-        logger.info(f"Successfully sent source code for {url}")
+        processing_msg.delete()
+        db.increment_requests(user_id, success=True)
+        logger.info(f"Sent source for {url} in {processing_time:.2f}s")
         
-        # Clean up temporary file
-        try:
-            os.remove(filename)
-        except Exception as e:
-            logger.warning(f"Failed to remove temp file: {e}")
-            
     except requests.exceptions.Timeout:
         msg.reply(constants.ERROR_TIMEOUT)
-        error_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=False)
-        logger.error(f"Timeout error for URL: {url}")
+        db.increment_requests(user_id, success=False)
     except requests.exceptions.ConnectionError:
         msg.reply(constants.ERROR_CONNECTION)
-        error_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=False)
-        logger.error(f"Connection error for URL: {url}")
+        db.increment_requests(user_id, success=False)
     except requests.exceptions.HTTPError as e:
-        status_code = e.response.status_code
-        msg.reply(f"❌ HTTP Error {status_code}. The server returned an error response.")
-        error_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=False)
-        logger.error(f"HTTP {status_code} error for {url}")
-    except requests.exceptions.RequestException as e:
-        msg.reply(f"❌ Failed to fetch the webpage. Please try again later.")
-        error_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=False)
-        logger.error(f"Request error for {url}: {e}")
+        msg.reply(f"❌ **HTTP Error** `{e.response.status_code}`")
+        db.increment_requests(user_id, success=False)
+        logger.error(f"HTTP error for {url}: {e}")
     except Exception as e:
-        msg.reply(constants.ERROR_UNEXPECTED)
-        error_stats[user_id] += 1
-        admin_panel.record_request(user_id, success=False)
-        logger.error(f"Unexpected error processing {url}: {e}")
+        msg.reply(f"❌ **Error:** `{str(e)[:80]}`")
+        db.increment_requests(user_id, success=False)
+        logger.error(f"Error for {url}: {e}")
 
        
 @bot.on_message(filters.private & filters.text)
 def show(bot, msg):
-    msg.reply(text="**Your link must start from http like:\nhttps://www.google.com\n\nFor more feel free to contact the** [Developer](https://t.me/e_phador)", disable_web_page_preview=True, quote=True)
+    msg.reply(
+        text="╔════════════════════════════════╗\n║  ❌ **Invalid Input**         ║\n╚════════════════════════════════╝\n\nYour message doesn't look like a valid URL.\n\n**Please send a link starting with:**\n`https://www.example.com`\n\nNeed help? Contact the [Developer](https://t.me/e_phador)",
+        disable_web_page_preview=True,
+        quote=True
+    )
 
 @bot.on_message(filters.private & filters.command('logs'))
 def logs_command(bot, msg):
     user_id = msg.from_user.id
-    
     if user_id not in config.ADMIN_IDS:
         msg.reply(constants.ERROR_PERMISSION_DENIED)
         return
@@ -771,21 +696,17 @@ def logs_command(bot, msg):
     parts = msg.text.split(maxsplit=1)
     
     if len(parts) >= 2:
-        # Show logs for specific user
         try:
-            target_user_id = int(parts[1])
-            activities = activity_logger.get_user_activities(target_user_id, limit=20)
-            formatted = activity_logger.format_activities(activities, limit=20)
-            
-            msg.reply(f"📋 **Activity Logs for User {target_user_id}:**\n\n```\n{formatted}\n```")
+            target = int(parts[1])
+            rows = db.get_user_activities(target, 20)
+            lines = [f"{r['timestamp'][:19]} | {r['action']} | {r['details'] or ''}" for r in rows]
+            msg.reply(f"📋 **Logs for User {target}:**\n\n```\n{chr(10).join(lines) or 'No logs'}\n```")
         except ValueError:
-            msg.reply("❌ Invalid user ID. Must be a number.")
+            msg.reply("❌ Invalid ID.")
     else:
-        # Show recent logs for all users
-        activities = activity_logger.get_recent_activities(limit=30)
-        formatted = activity_logger.format_activities(activities, limit=30)
-        
-        msg.reply(f"📋 **Recent Activity Logs:**\n\n```\n{formatted}\n```")
+        rows = db.get_recent_activities(30)
+        lines = [f"{r['timestamp'][:19]} | U{r['user_id']} | {r['action']}" for r in rows]
+        msg.reply(f"📋 **Recent Logs:**\n\n```\n{chr(10).join(lines) or 'No logs'}\n```")
     
 logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
 bot.run()

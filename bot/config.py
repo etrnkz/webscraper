@@ -65,6 +65,10 @@ try:
 except ValueError:
     FORCE_SUBSCRIBE_CHANNELS = []
 
+# Force join settings
+FORCE_JOIN_CHANNEL = 3876315930
+FREE_USAGE_LIMIT = 3
+
 # Logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

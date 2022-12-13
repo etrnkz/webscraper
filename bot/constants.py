@@ -6,43 +6,49 @@ BOT_NAME = "Web Scraper Bot"
 
 # Welcome messages
 WELCOME_MESSAGE = """
-👋 Hello {name}!
+╔══════════════════════════════╗
+║   👋 **Welcome {name}!**       ║
+╚══════════════════════════════╝
 
-I am a webpage source code downloader bot. Just send me any URL and I'll extract the HTML source code for you.
+I'm a **webpage source code extractor**. Send me any URL and I'll fetch the HTML source for you — packed in a neat `.zip` file.
 
-Use /help to see all available commands.
+▸ Use /help to explore all commands
+
+**🎫 Free uses:** {free_uses} remaining
 """
 
 HELP_MESSAGE = """
-**📖 How to use this bot:**
+╔══════════════════════════════╗
+║      📖 **Help Center**        ║
+╚══════════════════════════════╝
 
-1️⃣ Send me any webpage URL (starting with http:// or https://)
-2️⃣ I'll fetch and send you the HTML source code
-3️⃣ Rate limit: 5 requests/minute, 15 requests/day
+**How it works:**
+Simply send any URL starting with `http://` or `https://` and I'll download & zip the source for you.
+
+**User Commands:**
+┌─────────────────────────────────┐
+│ `/start`   — Restart the bot    │
+│ `/help`    — Show this guide    │
+│ `/stats`   — Your usage stats   │
+│ `/version` — Bot version info   │
+│ `/info`    — Extract page meta  │
+│ `/media`   — Download images    │
+│ `/archive` — Archive a website  │
+└─────────────────────────────────┘
 
 **Example:**
 `https://www.example.com`
-
-**Commands:**
-/start - Start the bot
-/help - Show this help message
-/stats - Show your usage statistics
-/version - Show bot version
-/info <url> - Get webpage metadata and information
-/media <url> - Download media from webpage (images, videos, etc.)
-/archive <url> - Recursively download entire website (max 50 pages)
 
 **Need help?** Contact: [Developer](https://t.me/e_phador)
 """
 
 # Error messages
-ERROR_INVALID_URL = "❌ Invalid URL format. Please provide a valid http:// or https:// URL."
-ERROR_RATE_LIMIT = "⏳ Rate limit exceeded. Please wait a minute before making more requests."
-ERROR_TIMEOUT = "⏱️ Request timed out. The website took too long to respond. Please try again later."
-ERROR_CONNECTION = "🔌 Connection error. Unable to reach the website. Please check the URL and try again."
-ERROR_FILE_TOO_LARGE = "❌ File too large. Maximum size is {max_size}MB."
-ERROR_PERMISSION_DENIED = "❌ You don't have permission to use this command."
-ERROR_UNEXPECTED = "❌ An unexpected error occurred while processing your request."
+ERROR_INVALID_URL = "❌ **Invalid URL**\nPlease provide a valid URL starting with `http://` or `https://`."
+ERROR_TIMEOUT = "⏱️ **Request timed out**\nThe website took too long to respond. Try again later."
+ERROR_CONNECTION = "🔌 **Connection error**\nUnable to reach the website. Check the URL and try again."
+ERROR_FILE_TOO_LARGE = "❌ **File too large**\nMaximum size is {max_size}MB."
+ERROR_PERMISSION_DENIED = "⛔ **Access denied**\nYou don't have permission to use this command."
+ERROR_UNEXPECTED = "❌ **Unexpected error**\nSomething went wrong. Please try again."
 
 # Success messages
-SUCCESS_EXTRACTED = "✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {size}\n🔤 Encoding: {encoding}"
+SUCCESS_EXTRACTED = "✅ **Source extracted**  \n🌐 `{domain}`  \n📦 {size}  \n🔤 {encoding}"
