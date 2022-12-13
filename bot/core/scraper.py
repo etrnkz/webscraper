@@ -17,7 +17,6 @@ from bot.modules import media_extractor
 import shutil
 from bot.modules.web_archiver import DownloadManager
 import zipfile
-import io
 from concurrent.futures import ThreadPoolExecutor
 from bot.modules.metadata_parser import extract_metadata, format_metadata
 from bot import database as db
@@ -562,27 +561,22 @@ def scrap(bot, msg):
     url = msg.text.strip()
     user_id = msg.from_user.id
     
-    # Register user activity
     db.register_user(user_id, msg.from_user.username, msg.from_user.first_name)
     db.log_activity(user_id, "scrape_request", url)
     
-    # Check if user is banned
     if db.is_banned(user_id):
         msg.reply("╔══════════════════════════╗\n║  🚫 **Access Denied**    ║\n╚══════════════════════════╝\n\nYou have been banned from using this bot.")
         db.record_block(user_id)
         return
     
-    # Track free usage and force join check
     if not check_force_join(user_id, msg):
         return
     db.increment_usage(user_id)
     
-    # Validate URL
     if not is_valid_url(url):
         msg.reply(constants.ERROR_INVALID_URL)
         return
     
-    # Check domain safety
     domain = extract_domain(url)
     if not is_safe_domain(domain):
         msg.reply("⚠️ **Unsafe domain** — this URL has been blocked.")
@@ -591,91 +585,41 @@ def scrap(bot, msg):
     
     logger.info(f"Processing URL from user {user_id}: {url}")
     
-    # Check cache first (fast path)
-    cached_content, cached_meta = cache.get_cached_content(url)
-    if cached_content and cached_meta:
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            zipf.writestr(f"{domain}.html", cached_content)
-        zip_buf.seek(0)
-        
-        msg.reply_document(
-            zip_buf,
-            file_name=f"source_{domain}.zip",
-            caption=f"╔══════════════════════════╗\n║  ✅ **Source (cached)**   ║\n╚══════════════════════════╝\n\n🌐 `{domain}`  •  📦 {format_file_size(len(cached_content))}  •  💾 `cached`"
-        )
-        db.increment_requests(user_id, success=True)
-        return
+    processing_msg = msg.reply("🌐 **Downloading entire website...**\n\n⏳ This may take a few minutes.")
     
-    # Send processing message
-    processing_msg = msg.reply("⬇️ **Fetching page...**")
-    start_time = time.time()
-
     try:
-        # Stream directly to ZIP in memory — no disk I/O
-        session = requests.Session()
-        session.headers.update(get_random_headers())
+        output_dir = f"site_{domain}_{user_id}"
+        os.makedirs(output_dir, exist_ok=True)
         
-        resp = session.get(url, timeout=config.REQUEST_TIMEOUT, proxies=config.get_proxies())
-        resp.raise_for_status()
+        dm = DownloadManager(max_depth=2, max_files=50, delay=1)
+        dm.recursive_download(url, output_dir)
+        stats = dm.get_stats()
         
-        content = resp.content
-        file_size = len(content)
+        if stats['total_downloaded'] > 0:
+            processing_msg.edit(f"📦 **Zipping {stats['total_downloaded']} pages...**")
+            
+            zip_filename = f"website_{domain}.zip"
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file in stats['files']:
+                    zipf.write(file, os.path.basename(file))
+            
+            msg.reply_document(
+                zip_filename,
+                caption=f"╔══════════════════════════════╗\n║  🌐 **Website Downloaded**   ║\n╚══════════════════════════════╝\n\n🌐 **Domain:** `{domain}`\n📄 **Pages:** `{stats['total_downloaded']}`\n📦 **Size:** `{format_file_size(os.path.getsize(zip_filename))}`"
+            )
+            
+            os.remove(zip_filename)
+            shutil.rmtree(output_dir, ignore_errors=True)
+            processing_msg.delete()
+        else:
+            msg.reply(f"❌ **No pages downloaded** from `{domain}`")
         
-        if file_size > config.MAX_FILE_SIZE:
-            msg.reply(f"❌ **File too large** — max `{config.MAX_FILE_SIZE // (1024*1024)}MB`")
-            return
-        
-        # Detect encoding (fast: just use apparent or utf-8)
-        try:
-            import cchardet as fast_detector
-            encoding = fast_detector.detect(content)['encoding'] or 'utf-8'
-        except ImportError:
-            encoding = resp.apparent_encoding or 'utf-8'
-        
-        text_content = content.decode('utf-8', errors='replace')
-        
-        # Cache async
-        cache.save_to_cache(url, text_content, {'domain': domain, 'encoding': encoding, 'size': file_size})
-        
-        # Build ZIP in memory
-        processing_msg.edit("📦 **Zipping...**")
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            zipf.writestr(f"{domain}.html", text_content)
-        zip_buf.seek(0)
-        
-        processing_msg.edit("📤 **Sending...**")
-        processing_time = time.time() - start_time
-        
-        msg.reply_document(
-            zip_buf,
-            file_name=f"source_{domain}.zip",
-            caption=constants.SUCCESS_EXTRACTED.format(
-                domain=domain,
-                size=format_file_size(file_size),
-                encoding=encoding
-            ) + f" | ⏱️ {processing_time:.2f}s"
-        )
-        
-        processing_msg.delete()
         db.increment_requests(user_id, success=True)
-        logger.info(f"Sent source for {url} in {processing_time:.2f}s")
         
-    except requests.exceptions.Timeout:
-        msg.reply(constants.ERROR_TIMEOUT)
-        db.increment_requests(user_id, success=False)
-    except requests.exceptions.ConnectionError:
-        msg.reply(constants.ERROR_CONNECTION)
-        db.increment_requests(user_id, success=False)
-    except requests.exceptions.HTTPError as e:
-        msg.reply(f"❌ **HTTP Error** `{e.response.status_code}`")
-        db.increment_requests(user_id, success=False)
-        logger.error(f"HTTP error for {url}: {e}")
     except Exception as e:
-        msg.reply(f"❌ **Error:** `{str(e)[:80]}`")
-        db.increment_requests(user_id, success=False)
-        logger.error(f"Error for {url}: {e}")
+        shutil.rmtree(output_dir, ignore_errors=True)
+        msg.reply(f"❌ **Download failed:** `{str(e)[:80]}`")
+        logger.error(f"Scrap error for {url}: {e}")
 
        
 @bot.on_message(filters.private & filters.text)
