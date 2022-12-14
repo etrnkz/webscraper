@@ -30,8 +30,8 @@ A Telegram bot that scrapes entire websites, extracts media, archives pages, and
 ## Quick Start
 
 ```bash
-git clone https://github.com/yourusername/webscraper-bot
-cd webscraper-bot
+git clone https://github.com/etrnkz/webscraper.git
+cd webscraper
 pip install -r requirements.txt
 cp .env.example .env   # add API_ID, API_HASH, BOT_TOKEN
 python main.py
