@@ -2,10 +2,10 @@
 import os
 import sys
 
-# Telegram API credentials
-API_ID = os.getenv('API_ID')
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+# Telegram API credentials — read from env, never hardcoded
+API_ID = int(os.getenv('API_ID', '0'))
+API_HASH = os.getenv('API_HASH', '')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
 # Validate required environment variables
 def validate_config():
@@ -15,9 +15,9 @@ def validate_config():
         'API_HASH': API_HASH,
         'BOT_TOKEN': BOT_TOKEN
     }
-    
+
     missing = [key for key, value in required.items() if not value]
-    
+
     if missing:
         print(f"❌ Missing required environment variables: {', '.join(missing)}")
         print("Please set them in your .env file or environment.")
@@ -68,6 +68,15 @@ except ValueError:
 # Force join settings
 FORCE_JOIN_CHANNEL = 3876315930
 FREE_USAGE_LIMIT = 3
+
+# Crawl settings
+CRAWL_MAX_PAGES = int(os.getenv('CRAWL_MAX_PAGES', '200'))
+CRAWL_MAX_DEPTH = int(os.getenv('CRAWL_MAX_DEPTH', '10'))
+CRAWL_CONCURRENCY = int(os.getenv('CRAWL_CONCURRENCY', '15'))
+CRAWL_PAGE_TIMEOUT = int(os.getenv('CRAWL_PAGE_TIMEOUT', '30000'))  # ms
+CRAWL_ASSET_TIMEOUT = int(os.getenv('CRAWL_ASSET_TIMEOUT', '15000'))  # ms
+CRAWL_MAX_ZIP_SIZE = 2 * 1024 * 1024 * 1024  # 2GB ZIP limit
+CRAWL_TIMEOUT_SECONDS = int(os.getenv('CRAWL_TIMEOUT_SECONDS', '300'))  # 5 min hard cap
 
 # Logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()

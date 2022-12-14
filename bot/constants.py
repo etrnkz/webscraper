@@ -1,52 +1,60 @@
 """Bot constants and messages"""
 
-# Bot info
-BOT_VERSION = "2.3.0"
-BOT_NAME = "Web Scraper Bot"
+BOT_VERSION = "3.0.0"
+BOT_NAME = "Web Cloner Bot"
 
-# Welcome messages
-WELCOME_MESSAGE = """
-╔══════════════════════════════╗
-║   👋 **Welcome {name}!**       ║
-╚══════════════════════════════╝
+WELCOME_MESSAGE = """Welcome {name}!
 
-I'm a **webpage source code extractor**. Send me any URL and I'll download the entire website for you — packed in a neat `.zip` file.
+I clone entire websites into offline ZIP files.
 
-▸ Use /help to explore all commands
+**Features**
+- Full JS rendering with Chromium
+- Auto-downloads videos (YouTube, TikTok, etc.)
+- Captures lazy-loaded content
+- Cookie auth for login-protected sites
+- Smart page prioritization
+- Offline link rewriting
+
+Send /help for full details.
 """
 
-HELP_MESSAGE = """
-╔══════════════════════════════╗
-║      📖 **Help Center**        ║
-╚══════════════════════════════╝
+HELP_MESSAGE = """**Web Cloner Bot**
 
-**How it works:**
-Simply send any URL starting with `http://` or `https://` and I'll download & zip the source for you.
+Send any URL to clone a site.
 
-**User Commands:**
-┌─────────────────────────────────┐
-│ `/start`   — Restart the bot    │
-│ `/help`    — Show this guide    │
-│ `/stats`   — Your usage stats   │
-│ `/version` — Bot version info   │
-│ `/info`    — Extract page meta  │
-│ `/media`   — Download images    │
-│ `/archive` — Archive a website  │
-└─────────────────────────────────┘
+**Flags** (add after URL)
+`subdomains` — Include subdomains
+`cookies` — Prompt for cookies.json (for auth)
 
-**Example:**
-`https://www.example.com`
+Examples:
+`google.com`
+`google.com subdomains`
+`site.com cookies subdomains`
 
-**Need help?** Contact: [Developer](https://t.me/e_phador)
+**Commands**
+/info <url> — Page metadata
+/media <url> — Download images
+/cancel — Stop a clone
+/settings — View your settings
+/scope — Set default crawl scope
+/cookies — Upload cookies globally
+/stats — Your usage
+/start — Welcome message
+
+Contact [@etrnkx](https://t.me/etrnkx)
 """
 
-# Error messages
-ERROR_INVALID_URL = "❌ **Invalid URL**\nPlease provide a valid URL starting with `http://` or `https://`."
-ERROR_TIMEOUT = "⏱️ **Request timed out**\nThe website took too long to respond. Try again later."
-ERROR_CONNECTION = "🔌 **Connection error**\nUnable to reach the website. Check the URL and try again."
-ERROR_FILE_TOO_LARGE = "❌ **File too large**\nMaximum size is {max_size}MB."
-ERROR_PERMISSION_DENIED = "⛔ **Access denied**\nYou don't have permission to use this command."
-ERROR_UNEXPECTED = "❌ **Unexpected error**\nSomething went wrong. Please try again."
+ERROR_INVALID_URL = "That doesn't look like a valid URL.\n\nTry: `https://example.com`"
+ERROR_TIMEOUT = "The website took too long to respond.\n\nTry again in a moment."
+ERROR_CONNECTION = "Couldn't reach the website.\n\nCheck the URL and try again."
+ERROR_FILE_TOO_LARGE = "This site is too large (over {max_size}MB).\n\nTry a smaller page."
+ERROR_PERMISSION_DENIED = "You don't have permission to use this command."
+ERROR_UNEXPECTED = "Something went wrong.\nPlease try again later."
 
-# Success messages
-SUCCESS_EXTRACTED = "✅ **Source extracted**  \n🌐 `{domain}`  \n📦 {size}  \n🔤 {encoding}"
+SUCCESS_EXTRACTED = """**Clone Ready!**
+
+Domain: `{domain}`
+Size: {size}
+
+Your ZIP is below.
+"""

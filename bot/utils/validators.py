@@ -1,23 +1,42 @@
-"""Input validation functions"""
-from urllib.parse import urlparse
-from typing import Optional
+"""Input validation and URL normalization"""
+from urllib.parse import urlparse, urljoin
+import ipaddress
+import re
+
+
+def normalize_url(url: str) -> str:
+    """Auto-prepend https:// if no scheme present"""
+    url = url.strip()
+    if not url:
+        return url
+    if not re.match(r'^https?://', url, re.IGNORECASE):
+        url = 'https://' + url
+    return url
 
 
 def is_valid_url(url: str) -> bool:
-    """Validate URL format and scheme"""
+    """Validate URL format, scheme, and block private IPs"""
     try:
-        url = url.strip()
+        url = normalize_url(url)
         result = urlparse(url)
 
-        if not all([result.scheme in ['http', 'https'], result.netloc]):
+        if result.scheme.lower() not in ('http', 'https'):
+            return False
+        if not result.netloc:
             return False
 
-        blocked_hosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1']
-        if result.netloc.split(':')[0] in blocked_hosts:
+        host = result.netloc.split(':')[0].lower()
+
+        blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1']
+        if host in blocked:
             return False
 
-        if result.netloc.startswith(('10.', '172.', '192.168.')):
-            return False
+        try:
+            addr = ipaddress.ip_address(host)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                return False
+        except ValueError:
+            pass
 
         return True
     except Exception:
@@ -25,6 +44,6 @@ def is_valid_url(url: str) -> bool:
 
 
 def is_safe_domain(domain: str) -> bool:
-    """Check if domain is safe to access"""
+    """Block known malicious TLDs"""
     dangerous_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq']
-    return not any(domain.endswith(tld) for tld in dangerous_tlds)
+    return not any(domain.lower().endswith(tld) for tld in dangerous_tlds)
