@@ -62,6 +62,25 @@ cleanup_history.py
 
 # Test files
 test_*.py
+tests/
+.pytest_cache/
+
+# CI/CD workflows
+.github/
+
+# Auto-generated documentation
+CHANGELOG.md
+CONTRIBUTING.md
+
+# Dev notes
+LazyDev.txt
+
+# Unused Flask app
+app.py
+
+# Log run patterns
+bot_run*.log
+bot_last*.log
 
 # Cache directory
 cache/
