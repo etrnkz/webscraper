@@ -39,11 +39,29 @@ wheels/
 *.session
 *.session-journal
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
 # Temporary files
 source-code.txt
 source_*.txt
 *.tmp
 *.log
+bot_out.txt
+bot_err.txt
+bot_output.log
+bot_debug.log
+
+# Temporary editor scripts
+seq-editor.ps1
+msg-editor.ps1
+cleanup_history.py
+
+# Test files
+test_*.py
 
 # Cache directory
 cache/
