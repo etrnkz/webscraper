@@ -91,37 +91,7 @@ docker build -t webscraper-bot . && docker run -d --env-file .env webscraper-bot
 | `LOG_LEVEL` | ❌ | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `FORCE_SUBSCRIBE_CHANNELS` | ❌ | — | Channel IDs for subscription gate |
 
----
 
-## Structure
-
-```
-webscraper-bot/
-├── main.py                  # Entry point
-├── bot/
-│   ├── core/scraper.py      # All handlers & scraping logic
-│   ├── database.py          # SQLite ORM (users, logs, stats)
-│   ├── config.py            # Environment configuration
-│   ├── constants.py         # Bot messages & formatting
-│   ├── modules/
-│   │   ├── web_archiver.py      # Recursive site downloader
-│   │   ├── media_extractor.py   # Image/asset extraction
-│   │   ├── metadata_parser.py   # OG / Twitter / meta parser
-│   │   ├── cache_manager.py     # 24h content caching
-│   │   └── sitemap_crawler.py   # sitemap.xml discovery
-│   ├── plugins/
-│   │   └── force_subscribe.py   # Channel subscription gate
-│   └── utils/
-│       ├── helpers.py           # Formatting utilities
-│       ├── validators.py        # URL & domain validation
-│       └── user_agents.py       # User-agent rotation
-├── tests/
-├── Dockerfile
-├── requirements.txt
-└── .env.example
-```
-
----
 
 ## Tech Stack
 
