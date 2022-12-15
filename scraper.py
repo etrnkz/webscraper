@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 import os
 import logging
+import re
+from urllib.parse import urlparse
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +25,14 @@ bot = Client(
     bot_token=BOT_TOKEN
 )
 
+def is_valid_url(url):
+    """Validate URL format and scheme"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ['http', 'https'], result.netloc])
+    except Exception:
+        return False
+
 @bot.on_message(filters.private & filters.command('start'))
 def start(bot, msg):
     msg.reply(f'Hello {msg.from_user.first_name}! I am a webpage source code downloader bot. Just send me a link.')
@@ -31,7 +41,14 @@ def start(bot, msg):
 	
 @bot.on_message(filters.private & filters.regex("http"))
 def scrap(bot, msg):
-    url = msg.text
+    url = msg.text.strip()
+    
+    # Validate URL
+    if not is_valid_url(url):
+        msg.reply("❌ Invalid URL format. Please provide a valid http:// or https:// URL.")
+        logger.warning(f"Invalid URL from user {msg.from_user.id}: {url}")
+        return
+    
     logger.info(f"Processing URL request from user {msg.from_user.id}: {url}")
     
     try:
