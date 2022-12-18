@@ -30,6 +30,9 @@ bot = Client(
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
 RATE_LIMIT = 5  # requests per minute
+REQUEST_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
 
 def is_valid_url(url):
     """Validate URL format and scheme"""
@@ -95,7 +98,7 @@ def scrap(bot, msg):
     logger.info(f"Processing URL request from user {user_id}: {url}")
     
     try:
-        request = requests.get(url, timeout=30)
+        request = requests.get(url, timeout=30, headers=REQUEST_HEADERS)
         request.raise_for_status()
         
         soup = BeautifulSoup(request.content, 'html.parser')
