@@ -29,6 +29,7 @@ bot = Client(
 
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
+request_stats = defaultdict(int)  # Track total requests per user
 RATE_LIMIT = 5  # requests per minute
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
 REQUEST_HEADERS = {
@@ -73,9 +74,20 @@ def help_command(bot, msg):
 **Example:**
 `https://www.example.com`
 
+**Commands:**
+/start - Start the bot
+/help - Show this help message
+/stats - Show your usage statistics
+
 **Need help?** Contact: [Developer](https://t.me/e_phador)
 """
     msg.reply(help_text, disable_web_page_preview=True)
+
+@bot.on_message(filters.private & filters.command('stats'))
+def stats_command(bot, msg):
+    user_id = msg.from_user.id
+    total = request_stats.get(user_id, 0)
+    msg.reply(f"📊 **Your Statistics:**\n\nTotal requests: {total}")
 
 
 	
@@ -115,6 +127,7 @@ def scrap(bot, msg):
             parse.write(soup.prettify())
         
         msg.reply_document("source-code.txt")
+        request_stats[user_id] += 1
         logger.info(f"Successfully sent source code for {url}")
         
         # Clean up temporary file
