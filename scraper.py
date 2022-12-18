@@ -5,6 +5,8 @@ import os
 import logging
 import re
 from urllib.parse import urlparse
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +27,10 @@ bot = Client(
     bot_token=BOT_TOKEN
 )
 
+# Rate limiting: track user requests
+user_requests = defaultdict(list)
+RATE_LIMIT = 5  # requests per minute
+
 def is_valid_url(url):
     """Validate URL format and scheme"""
     try:
@@ -32,6 +38,20 @@ def is_valid_url(url):
         return all([result.scheme in ['http', 'https'], result.netloc])
     except Exception:
         return False
+
+def check_rate_limit(user_id):
+    """Check if user has exceeded rate limit"""
+    now = datetime.now()
+    minute_ago = now - timedelta(minutes=1)
+    
+    # Clean old requests
+    user_requests[user_id] = [req_time for req_time in user_requests[user_id] if req_time > minute_ago]
+    
+    if len(user_requests[user_id]) >= RATE_LIMIT:
+        return False
+    
+    user_requests[user_id].append(now)
+    return True
 
 @bot.on_message(filters.private & filters.command('start'))
 def start(bot, msg):
@@ -42,14 +62,21 @@ def start(bot, msg):
 @bot.on_message(filters.private & filters.regex("http"))
 def scrap(bot, msg):
     url = msg.text.strip()
+    user_id = msg.from_user.id
+    
+    # Check rate limit
+    if not check_rate_limit(user_id):
+        msg.reply("⏳ Rate limit exceeded. Please wait a minute before making more requests.")
+        logger.warning(f"Rate limit exceeded for user {user_id}")
+        return
     
     # Validate URL
     if not is_valid_url(url):
         msg.reply("❌ Invalid URL format. Please provide a valid http:// or https:// URL.")
-        logger.warning(f"Invalid URL from user {msg.from_user.id}: {url}")
+        logger.warning(f"Invalid URL from user {user_id}: {url}")
         return
     
-    logger.info(f"Processing URL request from user {msg.from_user.id}: {url}")
+    logger.info(f"Processing URL request from user {user_id}: {url}")
     
     try:
         request = requests.get(url, timeout=30)
