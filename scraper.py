@@ -7,18 +7,19 @@ import re
 from urllib.parse import urlparse
 from collections import defaultdict
 from datetime import datetime, timedelta
+import config
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=config.LOG_LEVEL,
+    format=config.LOG_FORMAT
 )
 logger = logging.getLogger(__name__)
 
 # Load credentials from environment variables
-API_ID = os.getenv('API_ID')
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+API_ID = config.API_ID
+API_HASH = config.API_HASH
+BOT_TOKEN = config.BOT_TOKEN
 
 bot = Client(
     'my_bot',
@@ -30,11 +31,6 @@ bot = Client(
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
 request_stats = defaultdict(int)  # Track total requests per user
-RATE_LIMIT = 5  # requests per minute
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
-REQUEST_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-}
 
 def is_valid_url(url):
     """Validate URL format and scheme"""
@@ -52,7 +48,7 @@ def check_rate_limit(user_id):
     # Clean old requests
     user_requests[user_id] = [req_time for req_time in user_requests[user_id] if req_time > minute_ago]
     
-    if len(user_requests[user_id]) >= RATE_LIMIT:
+    if len(user_requests[user_id]) >= config.RATE_LIMIT:
         return False
     
     user_requests[user_id].append(now)
@@ -114,13 +110,13 @@ def scrap(bot, msg):
     processing_msg = msg.reply("⏳ Fetching webpage...")
     
     try:
-        request = requests.get(url, timeout=30, headers=REQUEST_HEADERS)
+        request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=config.REQUEST_HEADERS)
         request.raise_for_status()
         
         # Check content size
         content_length = request.headers.get('content-length')
-        if content_length and int(content_length) > MAX_FILE_SIZE:
-            msg.reply(f"❌ File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.")
+        if content_length and int(content_length) > config.MAX_FILE_SIZE:
+            msg.reply(f"❌ File too large. Maximum size is {config.MAX_FILE_SIZE // (1024*1024)}MB.")
             logger.warning(f"File too large for {url}: {content_length} bytes")
             return
         
