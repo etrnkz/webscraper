@@ -137,10 +137,17 @@ def scrap(bot, msg):
             logger.warning(f"Failed to remove temp file: {e}")
             
     except requests.exceptions.Timeout:
-        msg.reply("⏱️ Request timed out. The website took too long to respond.")
+        msg.reply("⏱️ Request timed out. The website took too long to respond. Please try again later.")
         logger.error(f"Timeout error for URL: {url}")
+    except requests.exceptions.ConnectionError:
+        msg.reply("🔌 Connection error. Unable to reach the website. Please check the URL and try again.")
+        logger.error(f"Connection error for URL: {url}")
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        msg.reply(f"❌ HTTP Error {status_code}. The server returned an error response.")
+        logger.error(f"HTTP {status_code} error for {url}")
     except requests.exceptions.RequestException as e:
-        msg.reply(f"❌ Failed to fetch the webpage. Error: {str(e)}")
+        msg.reply(f"❌ Failed to fetch the webpage. Please try again later.")
         logger.error(f"Request error for {url}: {e}")
     except Exception as e:
         msg.reply("❌ An unexpected error occurred while processing your request.")
