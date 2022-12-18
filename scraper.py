@@ -30,6 +30,7 @@ bot = Client(
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
 RATE_LIMIT = 5  # requests per minute
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
 REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
@@ -100,6 +101,13 @@ def scrap(bot, msg):
     try:
         request = requests.get(url, timeout=30, headers=REQUEST_HEADERS)
         request.raise_for_status()
+        
+        # Check content size
+        content_length = request.headers.get('content-length')
+        if content_length and int(content_length) > MAX_FILE_SIZE:
+            msg.reply(f"❌ File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.")
+            logger.warning(f"File too large for {url}: {content_length} bytes")
+            return
         
         soup = BeautifulSoup(request.content, 'html.parser')
         
