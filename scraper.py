@@ -110,6 +110,9 @@ def scrap(bot, msg):
     
     logger.info(f"Processing URL request from user {user_id}: {url}")
     
+    # Send processing message
+    processing_msg = msg.reply("⏳ Fetching webpage...")
+    
     try:
         request = requests.get(url, timeout=30, headers=REQUEST_HEADERS)
         request.raise_for_status()
@@ -123,10 +126,14 @@ def scrap(bot, msg):
         
         soup = BeautifulSoup(request.content, 'html.parser')
         
+        processing_msg.edit("📝 Generating source code file...")
+        
         with open('source-code.txt', 'w', encoding="utf-8") as parse:
             parse.write(soup.prettify())
         
+        processing_msg.edit("📤 Sending file...")
         msg.reply_document("source-code.txt")
+        processing_msg.delete()
         request_stats[user_id] += 1
         logger.info(f"Successfully sent source code for {url}")
         
