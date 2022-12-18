@@ -57,6 +57,22 @@ def check_rate_limit(user_id):
 def start(bot, msg):
     msg.reply(f'Hello {msg.from_user.first_name}! I am a webpage source code downloader bot. Just send me a link.')
 
+@bot.on_message(filters.private & filters.command('help'))
+def help_command(bot, msg):
+    help_text = """
+**📖 How to use this bot:**
+
+1️⃣ Send me any webpage URL (starting with http:// or https://)
+2️⃣ I'll fetch and send you the HTML source code
+3️⃣ Rate limit: 5 requests per minute
+
+**Example:**
+`https://www.example.com`
+
+**Need help?** Contact: [Developer](https://t.me/e_phador)
+"""
+    msg.reply(help_text, disable_web_page_preview=True)
+
 
 	
 @bot.on_message(filters.private & filters.regex("http"))
