@@ -41,6 +41,7 @@ wheels/
 
 # Temporary files
 source-code.txt
+source_*.txt
 *.tmp
 *.log
 
