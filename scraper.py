@@ -186,7 +186,12 @@ def scrap(bot, msg):
             filename,
             caption=f"✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {file_size_kb:.2f} KB\n🔤 Encoding: {encoding}"
         )
-        processing_msg.delete()
+        
+        try:
+            processing_msg.delete()
+        except Exception:
+            pass  # Message might already be deleted
+            
         request_stats[user_id] += 1
         logger.info(f"Successfully sent source code for {url}")
         
