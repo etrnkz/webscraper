@@ -141,18 +141,23 @@ def scrap(bot, msg):
         
         processing_msg.edit("📝 Generating source code file...")
         
-        with open('source-code.txt', 'w', encoding="utf-8") as parse:
+        # Generate filename from URL
+        from urllib.parse import quote
+        domain = urlparse(url).netloc.replace('www.', '')
+        filename = f"source_{domain}.txt"
+        
+        with open(filename, 'w', encoding="utf-8") as parse:
             parse.write(soup.prettify())
         
         processing_msg.edit("📤 Sending file...")
-        msg.reply_document("source-code.txt")
+        msg.reply_document(filename)
         processing_msg.delete()
         request_stats[user_id] += 1
         logger.info(f"Successfully sent source code for {url}")
         
         # Clean up temporary file
         try:
-            os.remove('source-code.txt')
+            os.remove(filename)
         except Exception as e:
             logger.warning(f"Failed to remove temp file: {e}")
             
