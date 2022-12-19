@@ -102,6 +102,27 @@ def stats_command(bot, msg):
     total = request_stats.get(user_id, 0)
     msg.reply(f"📊 **Your Statistics:**\n\nTotal requests: {total}")
 
+@bot.on_message(filters.private & filters.command('admin'))
+def admin_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply("❌ You don't have permission to use this command.")
+        return
+    
+    total_users = len(request_stats)
+    total_requests = sum(request_stats.values())
+    
+    admin_text = f"""
+🔧 **Admin Statistics:**
+
+👥 Total users: {total_users}
+📊 Total requests: {total_requests}
+⚡ Rate limit: {config.RATE_LIMIT}/min
+💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
+"""
+    msg.reply(admin_text)
+
 
 	
 @bot.on_message(filters.private & filters.regex("http"))
