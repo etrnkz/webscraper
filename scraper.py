@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from collections import defaultdict
 from datetime import datetime, timedelta
 import config
+import chardet
 
 # Configure logging
 logging.basicConfig(
@@ -151,6 +152,10 @@ def scrap(bot, msg):
         request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=config.REQUEST_HEADERS)
         request.raise_for_status()
         
+        # Detect encoding
+        detected = chardet.detect(request.content)
+        encoding = detected['encoding'] or 'utf-8'
+        
         # Check content size
         content_length = request.headers.get('content-length')
         if content_length and int(content_length) > config.MAX_FILE_SIZE:
@@ -158,7 +163,7 @@ def scrap(bot, msg):
             logger.warning(f"File too large for {url}: {content_length} bytes")
             return
         
-        soup = BeautifulSoup(request.content, 'html.parser')
+        soup = BeautifulSoup(request.content, 'html.parser', from_encoding=encoding)
         
         processing_msg.edit("📝 Generating source code file...")
         
@@ -167,6 +172,7 @@ def scrap(bot, msg):
         domain = urlparse(url).netloc.replace('www.', '')
         filename = f"source_{domain}.txt"
         
+        # Write prettified HTML
         with open(filename, 'w', encoding="utf-8") as parse:
             parse.write(soup.prettify())
         
