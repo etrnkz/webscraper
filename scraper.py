@@ -35,8 +35,25 @@ request_stats = defaultdict(int)  # Track total requests per user
 def is_valid_url(url):
     """Validate URL format and scheme"""
     try:
+        # Remove whitespace and common issues
+        url = url.strip()
+        
         result = urlparse(url)
-        return all([result.scheme in ['http', 'https'], result.netloc])
+        
+        # Check scheme and netloc
+        if not all([result.scheme in ['http', 'https'], result.netloc]):
+            return False
+        
+        # Block localhost and private IPs
+        blocked_hosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1']
+        if result.netloc.split(':')[0] in blocked_hosts:
+            return False
+        
+        # Block private IP ranges
+        if result.netloc.startswith(('10.', '172.', '192.168.')):
+            return False
+            
+        return True
     except Exception:
         return False
 
