@@ -177,7 +177,15 @@ def scrap(bot, msg):
             parse.write(soup.prettify())
         
         processing_msg.edit("📤 Sending file...")
-        msg.reply_document(filename)
+        
+        # Get file size
+        file_size = os.path.getsize(filename)
+        file_size_kb = file_size / 1024
+        
+        msg.reply_document(
+            filename,
+            caption=f"✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {file_size_kb:.2f} KB\n🔤 Encoding: {encoding}"
+        )
         processing_msg.delete()
         request_stats[user_id] += 1
         logger.info(f"Successfully sent source code for {url}")
