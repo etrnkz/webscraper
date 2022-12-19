@@ -121,8 +121,39 @@ def admin_command(bot, msg):
 📊 Total requests: {total_requests}
 ⚡ Rate limit: {config.RATE_LIMIT}/min
 💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
+
+**Commands:**
+/broadcast <message> - Send message to all users
 """
     msg.reply(admin_text)
+
+@bot.on_message(filters.private & filters.command('broadcast'))
+def broadcast_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply("❌ You don't have permission to use this command.")
+        return
+    
+    # Extract message after command
+    broadcast_text = msg.text.split(maxsplit=1)
+    if len(broadcast_text) < 2:
+        msg.reply("❌ Usage: /broadcast <message>")
+        return
+    
+    broadcast_text = broadcast_text[1]
+    success = 0
+    failed = 0
+    
+    for uid in request_stats.keys():
+        try:
+            bot.send_message(uid, f"📢 **Broadcast Message:**\n\n{broadcast_text}")
+            success += 1
+        except Exception as e:
+            failed += 1
+            logger.error(f"Failed to send broadcast to {uid}: {e}")
+    
+    msg.reply(f"✅ Broadcast sent!\n\n✓ Success: {success}\n✗ Failed: {failed}")
 
 
 	
