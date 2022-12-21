@@ -11,6 +11,7 @@ import config
 import chardet
 import time
 from utils import sanitize_filename, format_file_size, extract_domain
+import constants
 
 # Configure logging
 logging.basicConfig(
@@ -76,28 +77,11 @@ def check_rate_limit(user_id):
 
 @bot.on_message(filters.private & filters.command('start'))
 def start(bot, msg):
-    msg.reply(f'Hello {msg.from_user.first_name}! I am a webpage source code downloader bot. Just send me a link.')
+    msg.reply(constants.WELCOME_MESSAGE.format(name=msg.from_user.first_name))
 
 @bot.on_message(filters.private & filters.command('help'))
 def help_command(bot, msg):
-    help_text = """
-**📖 How to use this bot:**
-
-1️⃣ Send me any webpage URL (starting with http:// or https://)
-2️⃣ I'll fetch and send you the HTML source code
-3️⃣ Rate limit: 5 requests per minute
-
-**Example:**
-`https://www.example.com`
-
-**Commands:**
-/start - Start the bot
-/help - Show this help message
-/stats - Show your usage statistics
-
-**Need help?** Contact: [Developer](https://t.me/e_phador)
-"""
-    msg.reply(help_text, disable_web_page_preview=True)
+    msg.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
 
 @bot.on_message(filters.private & filters.command('stats'))
 def stats_command(bot, msg):
@@ -166,13 +150,13 @@ def scrap(bot, msg):
     
     # Check rate limit
     if not check_rate_limit(user_id):
-        msg.reply("⏳ Rate limit exceeded. Please wait a minute before making more requests.")
+        msg.reply(constants.ERROR_RATE_LIMIT)
         logger.warning(f"Rate limit exceeded for user {user_id}")
         return
     
     # Validate URL
     if not is_valid_url(url):
-        msg.reply("❌ Invalid URL format. Please provide a valid http:// or https:// URL.")
+        msg.reply(constants.ERROR_INVALID_URL)
         logger.warning(f"Invalid URL from user {user_id}: {url}")
         return
     
@@ -228,7 +212,11 @@ def scrap(bot, msg):
         
         msg.reply_document(
             filename,
-            caption=f"✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {file_size_str}\n🔤 Encoding: {encoding}"
+            caption=constants.SUCCESS_EXTRACTED.format(
+                domain=domain,
+                size=file_size_str,
+                encoding=encoding
+            )
         )
         
         try:
@@ -246,10 +234,10 @@ def scrap(bot, msg):
             logger.warning(f"Failed to remove temp file: {e}")
             
     except requests.exceptions.Timeout:
-        msg.reply("⏱️ Request timed out. The website took too long to respond. Please try again later.")
+        msg.reply(constants.ERROR_TIMEOUT)
         logger.error(f"Timeout error for URL: {url}")
     except requests.exceptions.ConnectionError:
-        msg.reply("🔌 Connection error. Unable to reach the website. Please check the URL and try again.")
+        msg.reply(constants.ERROR_CONNECTION)
         logger.error(f"Connection error for URL: {url}")
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code
@@ -259,7 +247,7 @@ def scrap(bot, msg):
         msg.reply(f"❌ Failed to fetch the webpage. Please try again later.")
         logger.error(f"Request error for {url}: {e}")
     except Exception as e:
-        msg.reply("❌ An unexpected error occurred while processing your request.")
+        msg.reply(constants.ERROR_UNEXPECTED)
         logger.error(f"Unexpected error processing {url}: {e}")
 
        
