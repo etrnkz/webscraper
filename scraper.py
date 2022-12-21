@@ -260,4 +260,5 @@ def show(bot, msg):
     msg.reply(text="**Your link must start from http like:\nhttps://www.google.com\n\nFor more feel free to contact the** [Developer](https://t.me/e_phador)", disable_web_page_preview=True, quote=True)
 	    
     
+logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
 bot.run()
