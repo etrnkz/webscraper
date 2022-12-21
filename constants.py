@@ -1,5 +1,9 @@
 """Bot constants and messages"""
 
+# Bot info
+BOT_VERSION = "1.0.0"
+BOT_NAME = "Web Scraper Bot"
+
 # Welcome messages
 WELCOME_MESSAGE = """
 👋 Hello {name}!
@@ -23,6 +27,7 @@ HELP_MESSAGE = """
 /start - Start the bot
 /help - Show this help message
 /stats - Show your usage statistics
+/version - Show bot version
 
 **Need help?** Contact: [Developer](https://t.me/e_phador)
 """

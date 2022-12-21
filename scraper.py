@@ -89,6 +89,10 @@ def stats_command(bot, msg):
     total = request_stats.get(user_id, 0)
     msg.reply(f"📊 **Your Statistics:**\n\nTotal requests: {total}")
 
+@bot.on_message(filters.private & filters.command('version'))
+def version_command(bot, msg):
+    msg.reply(f"🤖 **{constants.BOT_NAME}**\nVersion: `{constants.BOT_VERSION}`")
+
 @bot.on_message(filters.private & filters.command('admin'))
 def admin_command(bot, msg):
     user_id = msg.from_user.id
