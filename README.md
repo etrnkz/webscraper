@@ -15,6 +15,9 @@ A Telegram bot that downloads and sends webpage source code.
 - `/start` - Start the bot
 - `/help` - Show help message
 - `/stats` - View your usage statistics
+- `/version` - Show bot version
+- `/admin` - Admin panel (admin only)
+- `/broadcast` - Send announcement (admin only)
 
 ## Setup
 
