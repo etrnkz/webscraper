@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import config
 import chardet
 import time
+from utils import sanitize_filename, format_file_size, extract_domain
 
 # Configure logging
 logging.basicConfig(
@@ -212,9 +213,8 @@ def scrap(bot, msg):
         processing_msg.edit("📝 Generating source code file...")
         
         # Generate filename from URL
-        from urllib.parse import quote
-        domain = urlparse(url).netloc.replace('www.', '')
-        filename = f"source_{domain}.txt"
+        domain = extract_domain(url)
+        filename = sanitize_filename(f"source_{domain}.txt")
         
         # Write prettified HTML
         with open(filename, 'w', encoding="utf-8") as parse:
@@ -224,11 +224,11 @@ def scrap(bot, msg):
         
         # Get file size
         file_size = os.path.getsize(filename)
-        file_size_kb = file_size / 1024
+        file_size_str = format_file_size(file_size)
         
         msg.reply_document(
             filename,
-            caption=f"✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {file_size_kb:.2f} KB\n🔤 Encoding: {encoding}"
+            caption=f"✅ **Source code extracted**\n\n🌐 Domain: `{domain}`\n📦 Size: {file_size_str}\n🔤 Encoding: {encoding}"
         )
         
         try:
