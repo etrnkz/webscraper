@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import config
 import chardet
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -179,9 +180,21 @@ def scrap(bot, msg):
     # Send processing message
     processing_msg = msg.reply("⏳ Fetching webpage...")
     
+    # Retry logic
+    for attempt in range(config.MAX_RETRIES):
+        try:
+            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=config.REQUEST_HEADERS)
+            request.raise_for_status()
+            break
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt < config.MAX_RETRIES - 1:
+                logger.warning(f"Attempt {attempt + 1} failed for {url}, retrying...")
+                time.sleep(2)
+                continue
+            else:
+                raise
+    
     try:
-        request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=config.REQUEST_HEADERS)
-        request.raise_for_status()
         
         # Detect encoding
         detected = chardet.detect(request.content)
