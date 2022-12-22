@@ -141,6 +141,13 @@ def scrap(bot, msg):
         logger.warning(f"Invalid URL from user {user_id}: {url}")
         return
     
+    # Check domain safety
+    domain = extract_domain(url)
+    if not is_safe_domain(domain):
+        msg.reply("⚠️ This domain is flagged as potentially unsafe. Request blocked.")
+        logger.warning(f"Unsafe domain blocked: {domain}")
+        return
+    
     logger.info(f"Processing URL request from user {user_id}: {url}")
     
     # Send processing message
