@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Environment
+.env
+.env.local
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Documentation
+README.md
+PLAN.md
+*.md
+
+# Session files
+*.session
+*.session-journal
+
+# Temporary files
+*.tmp
+*.log
+source_*.txt
