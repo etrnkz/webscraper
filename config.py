@@ -1,10 +1,27 @@
 """Configuration settings for the bot"""
 import os
+import sys
 
 # Telegram API credentials
 API_ID = os.getenv('API_ID')
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+
+# Validate required environment variables
+def validate_config():
+    """Validate that all required config is present"""
+    required = {
+        'API_ID': API_ID,
+        'API_HASH': API_HASH,
+        'BOT_TOKEN': BOT_TOKEN
+    }
+    
+    missing = [key for key, value in required.items() if not value]
+    
+    if missing:
+        print(f"❌ Missing required environment variables: {', '.join(missing)}")
+        print("Please set them in your .env file or environment.")
+        sys.exit(1)
 
 # Rate limiting
 RATE_LIMIT = 5  # requests per minute

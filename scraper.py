@@ -14,6 +14,9 @@ from utils import sanitize_filename, format_file_size, extract_domain
 import constants
 from validators import is_valid_url, is_safe_domain
 
+# Validate configuration on startup
+config.validate_config()
+
 # Configure logging
 logging.basicConfig(
     level=config.LOG_LEVEL,
