@@ -83,14 +83,17 @@ def admin_command(bot, msg):
     
     total_users = len(request_stats)
     total_requests = sum(request_stats.values())
+    avg_requests = total_requests / total_users if total_users > 0 else 0
     
     admin_text = f"""
 🔧 **Admin Statistics:**
 
 👥 Total users: {total_users}
 📊 Total requests: {total_requests}
+📈 Avg requests/user: {avg_requests:.2f}
 ⚡ Rate limit: {config.RATE_LIMIT}/min
 💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
+🔄 Max retries: {config.MAX_RETRIES}
 
 **Commands:**
 /broadcast <message> - Send message to all users
