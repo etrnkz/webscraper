@@ -40,6 +40,7 @@ bot = Client(
 user_requests = defaultdict(list)
 request_stats = defaultdict(int)  # Track total requests per user
 error_stats = defaultdict(int)  # Track errors per user
+bot_start_time = datetime.now()  # Track bot uptime
 
 
 def check_rate_limit(user_id):
@@ -86,14 +87,19 @@ def admin_command(bot, msg):
     
     total_users = len(request_stats)
     total_requests = sum(request_stats.values())
+    total_errors = sum(error_stats.values())
     avg_requests = total_requests / total_users if total_users > 0 else 0
+    uptime = datetime.now() - bot_start_time
+    uptime_str = str(uptime).split('.')[0]  # Remove microseconds
     
     admin_text = f"""
 🔧 **Admin Statistics:**
 
 👥 Total users: {total_users}
 📊 Total requests: {total_requests}
+❌ Total errors: {total_errors}
 📈 Avg requests/user: {avg_requests:.2f}
+⏰ Uptime: {uptime_str}
 ⚡ Rate limit: {config.RATE_LIMIT}/min
 💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
 🔄 Max retries: {config.MAX_RETRIES}
