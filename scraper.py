@@ -82,7 +82,8 @@ def admin_command(bot, msg):
     user_id = msg.from_user.id
     
     if user_id not in config.ADMIN_IDS:
-        msg.reply("❌ You don't have permission to use this command.")
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        logger.warning(f"Unauthorized admin access attempt by user {user_id}")
         return
     
     total_users = len(request_stats)
@@ -114,7 +115,8 @@ def broadcast_command(bot, msg):
     user_id = msg.from_user.id
     
     if user_id not in config.ADMIN_IDS:
-        msg.reply("❌ You don't have permission to use this command.")
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        logger.warning(f"Unauthorized broadcast attempt by user {user_id}")
         return
     
     # Extract message after command
