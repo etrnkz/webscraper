@@ -39,6 +39,7 @@ bot = Client(
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
 request_stats = defaultdict(int)  # Track total requests per user
+error_stats = defaultdict(int)  # Track errors per user
 
 
 def check_rate_limit(user_id):
@@ -67,7 +68,9 @@ def help_command(bot, msg):
 def stats_command(bot, msg):
     user_id = msg.from_user.id
     total = request_stats.get(user_id, 0)
-    msg.reply(f"📊 **Your Statistics:**\n\nTotal requests: {total}")
+    errors = error_stats.get(user_id, 0)
+    success_rate = ((total - errors) / total * 100) if total > 0 else 0
+    msg.reply(f"📊 **Your Statistics:**\n\n✅ Total requests: {total}\n❌ Errors: {errors}\n📈 Success rate: {success_rate:.1f}%")
 
 @bot.on_message(filters.private & filters.command('version'))
 def version_command(bot, msg):
@@ -233,19 +236,24 @@ def scrap(bot, msg):
             
     except requests.exceptions.Timeout:
         msg.reply(constants.ERROR_TIMEOUT)
+        error_stats[user_id] += 1
         logger.error(f"Timeout error for URL: {url}")
     except requests.exceptions.ConnectionError:
         msg.reply(constants.ERROR_CONNECTION)
+        error_stats[user_id] += 1
         logger.error(f"Connection error for URL: {url}")
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code
         msg.reply(f"❌ HTTP Error {status_code}. The server returned an error response.")
+        error_stats[user_id] += 1
         logger.error(f"HTTP {status_code} error for {url}")
     except requests.exceptions.RequestException as e:
         msg.reply(f"❌ Failed to fetch the webpage. Please try again later.")
+        error_stats[user_id] += 1
         logger.error(f"Request error for {url}: {e}")
     except Exception as e:
         msg.reply(constants.ERROR_UNEXPECTED)
+        error_stats[user_id] += 1
         logger.error(f"Unexpected error processing {url}: {e}")
 
        
