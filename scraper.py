@@ -155,6 +155,7 @@ def scrap(bot, msg):
     
     # Send processing message
     processing_msg = msg.reply("⏳ Fetching webpage...")
+    start_time = time.time()
     
     # Retry logic
     for attempt in range(config.MAX_RETRIES):
@@ -201,13 +202,16 @@ def scrap(bot, msg):
         file_size = os.path.getsize(filename)
         file_size_str = format_file_size(file_size)
         
+        # Calculate processing time
+        processing_time = time.time() - start_time
+        
         msg.reply_document(
             filename,
             caption=constants.SUCCESS_EXTRACTED.format(
                 domain=domain,
                 size=file_size_str,
                 encoding=encoding
-            )
+            ) + f"\n⏱️ Time: {processing_time:.2f}s"
         )
         
         try:
