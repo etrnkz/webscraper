@@ -25,6 +25,7 @@ def validate_config():
 
 # Rate limiting
 RATE_LIMIT = 5  # requests per minute
+DAILY_LIMIT = 15  # requests per day
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # Request settings

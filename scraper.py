@@ -38,6 +38,7 @@ bot = Client(
 
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
+daily_requests = defaultdict(list)  # Track daily requests
 request_stats = defaultdict(int)  # Track total requests per user
 error_stats = defaultdict(int)  # Track errors per user
 bot_start_time = datetime.now()  # Track bot uptime
@@ -55,6 +56,21 @@ def check_rate_limit(user_id):
         return False
     
     user_requests[user_id].append(now)
+    return True
+
+
+def check_daily_limit(user_id):
+    """Check if user has exceeded daily limit"""
+    now = datetime.now()
+    day_ago = now - timedelta(days=1)
+    
+    # Clean old requests
+    daily_requests[user_id] = [req_time for req_time in daily_requests[user_id] if req_time > day_ago]
+    
+    if len(daily_requests[user_id]) >= config.DAILY_LIMIT:
+        return False
+    
+    daily_requests[user_id].append(now)
     return True
 
 @bot.on_message(filters.private & filters.command('start'))
@@ -150,6 +166,15 @@ def scrap(bot, msg):
     if not check_rate_limit(user_id):
         msg.reply(constants.ERROR_RATE_LIMIT)
         logger.warning(f"Rate limit exceeded for user {user_id}")
+        return
+    
+    # Check daily limit
+    if not check_daily_limit(user_id):
+        remaining_time = timedelta(days=1) - (datetime.now() - daily_requests[user_id][0])
+        hours = int(remaining_time.total_seconds() // 3600)
+        minutes = int((remaining_time.total_seconds() % 3600) // 60)
+        msg.reply(f"📅 Daily limit reached (15 requests/day). Try again in {hours}h {minutes}m.")
+        logger.warning(f"Daily limit exceeded for user {user_id}")
         return
     
     # Validate URL
