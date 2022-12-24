@@ -13,9 +13,14 @@ import time
 from utils import sanitize_filename, format_file_size, extract_domain
 import constants
 from validators import is_valid_url, is_safe_domain
+from user_agents import get_random_headers
+import cache
 
 # Validate configuration on startup
 config.validate_config()
+
+# Initialize cache
+cache.init_cache()
 
 # Configure logging
 logging.basicConfig(
@@ -192,6 +197,30 @@ def scrap(bot, msg):
     
     logger.info(f"Processing URL request from user {user_id}: {url}")
     
+    # Check cache first
+    cached_content, cached_meta = cache.get_cached_content(url)
+    if cached_content and cached_meta:
+        # Serve from cache
+        domain = extract_domain(url)
+        filename = sanitize_filename(f"source_{domain}.txt")
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(cached_content)
+        
+        msg.reply_document(
+            filename,
+            caption=f"✅ **Source code (cached)**\n\n🌐 Domain: `{domain}`\n📦 Size: {format_file_size(len(cached_content))}\n🔤 Encoding: {cached_meta.get('encoding', 'utf-8')}\n💾 Cached"
+        )
+        
+        try:
+            os.remove(filename)
+        except Exception:
+            pass
+        
+        request_stats[user_id] += 1
+        logger.info(f"Served cached content for {url}")
+        return
+    
     # Send processing message
     processing_msg = msg.reply("⏳ Fetching webpage...")
     start_time = time.time()
@@ -199,7 +228,9 @@ def scrap(bot, msg):
     # Retry logic
     for attempt in range(config.MAX_RETRIES):
         try:
-            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=config.REQUEST_HEADERS)
+            # Use randomized headers
+            headers = get_random_headers()
+            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers)
             request.raise_for_status()
             break
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
@@ -233,7 +264,15 @@ def scrap(bot, msg):
         
         # Write prettified HTML
         with open(filename, 'w', encoding="utf-8") as parse:
-            parse.write(soup.prettify())
+            prettified = soup.prettify()
+            parse.write(prettified)
+        
+        # Save to cache
+        cache.save_to_cache(url, prettified, {
+            'domain': domain,
+            'encoding': encoding,
+            'size': len(prettified)
+        })
         
         processing_msg.edit("📤 Sending file...")
         
