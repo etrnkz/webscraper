@@ -15,6 +15,8 @@ import constants
 from validators import is_valid_url, is_safe_domain
 from user_agents import get_random_headers
 import cache
+import media_scraper
+import shutil
 
 # Validate configuration on startup
 config.validate_config()
@@ -97,6 +99,74 @@ def stats_command(bot, msg):
 @bot.on_message(filters.private & filters.command('version'))
 def version_command(bot, msg):
     msg.reply(f"🤖 **{constants.BOT_NAME}**\nVersion: `{constants.BOT_VERSION}`")
+
+@bot.on_message(filters.private & filters.command('media'))
+def media_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    # Extract URL from command
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /media <url>\n\nExample: /media https://example.com")
+        return
+    
+    url = parts[1].strip()
+    
+    # Check rate limits
+    if not check_rate_limit(user_id):
+        msg.reply(constants.ERROR_RATE_LIMIT)
+        return
+    
+    if not check_daily_limit(user_id):
+        msg.reply("📅 Daily limit reached (15 requests/day).")
+        return
+    
+    # Validate URL
+    if not is_valid_url(url):
+        msg.reply(constants.ERROR_INVALID_URL)
+        return
+    
+    processing_msg = msg.reply("⏳ Fetching media from webpage...")
+    
+    try:
+        headers = get_random_headers()
+        response = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        domain = extract_domain(url)
+        output_dir = f"media_{domain}_{user_id}"
+        
+        processing_msg.edit("📥 Downloading media files...")
+        
+        # Download images only for now
+        downloaded = media_scraper.scrape_media(url, soup, output_dir, ['images'])
+        
+        if downloaded:
+            processing_msg.edit(f"📤 Sending {len(downloaded)} files...")
+            
+            for filepath in downloaded[:5]:  # Send max 5 files
+                try:
+                    msg.reply_document(filepath)
+                except Exception as e:
+                    logger.error(f"Failed to send {filepath}: {e}")
+            
+            msg.reply(f"✅ Downloaded {len(downloaded)} media files from {domain}")
+        else:
+            msg.reply("❌ No media files found on this page.")
+        
+        # Cleanup
+        try:
+            shutil.rmtree(output_dir)
+        except Exception:
+            pass
+        
+        processing_msg.delete()
+        request_stats[user_id] += 1
+        
+    except Exception as e:
+        msg.reply(f"❌ Failed to scrape media: {str(e)}")
+        logger.error(f"Media scraping error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('admin'))
 def admin_command(bot, msg):

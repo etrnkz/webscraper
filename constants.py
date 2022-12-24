@@ -18,7 +18,7 @@ HELP_MESSAGE = """
 
 1️⃣ Send me any webpage URL (starting with http:// or https://)
 2️⃣ I'll fetch and send you the HTML source code
-3️⃣ Rate limit: 5 requests per minute
+3️⃣ Rate limit: 5 requests/minute, 15 requests/day
 
 **Example:**
 `https://www.example.com`
@@ -28,6 +28,7 @@ HELP_MESSAGE = """
 /help - Show this help message
 /stats - Show your usage statistics
 /version - Show bot version
+/media <url> - Download media from webpage (images, videos, etc.)
 
 **Need help?** Contact: [Developer](https://t.me/e_phador)
 """
