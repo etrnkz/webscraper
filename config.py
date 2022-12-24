@@ -35,6 +35,22 @@ REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
+# Proxy settings (optional)
+PROXY_ENABLED = os.getenv('PROXY_ENABLED', 'false').lower() == 'true'
+PROXY_HTTP = os.getenv('PROXY_HTTP', '')
+PROXY_HTTPS = os.getenv('PROXY_HTTPS', '')
+
+def get_proxies():
+    """Get proxy configuration if enabled"""
+    if PROXY_ENABLED and (PROXY_HTTP or PROXY_HTTPS):
+        proxies = {}
+        if PROXY_HTTP:
+            proxies['http'] = PROXY_HTTP
+        if PROXY_HTTPS:
+            proxies['https'] = PROXY_HTTPS
+        return proxies
+    return None
+
 # Admin settings
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x.strip()]
 
