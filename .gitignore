@@ -45,6 +45,9 @@ source_*.txt
 *.tmp
 *.log
 
+# Cache directory
+cache/
+
 # gbd configuration
 .git-backdate/
 
