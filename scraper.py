@@ -130,7 +130,8 @@ def media_command(bot, msg):
     
     try:
         headers = get_random_headers()
-        response = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers)
+        proxies = config.get_proxies()
+        response = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers, proxies=proxies)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -298,9 +299,10 @@ def scrap(bot, msg):
     # Retry logic
     for attempt in range(config.MAX_RETRIES):
         try:
-            # Use randomized headers
+            # Use randomized headers and optional proxy
             headers = get_random_headers()
-            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers)
+            proxies = config.get_proxies()
+            request = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers, proxies=proxies)
             request.raise_for_status()
             break
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
