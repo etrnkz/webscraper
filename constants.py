@@ -29,6 +29,7 @@ HELP_MESSAGE = """
 /stats - Show your usage statistics
 /version - Show bot version
 /media <url> - Download media from webpage (images, videos, etc.)
+/archive <url> - Recursively download entire website (max 50 pages)
 
 **Need help?** Contact: [Developer](https://t.me/e_phador)
 """

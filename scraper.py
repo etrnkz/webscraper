@@ -17,6 +17,8 @@ from user_agents import get_random_headers
 import cache
 import media_scraper
 import shutil
+from download_manager import DownloadManager
+import zipfile
 
 # Validate configuration on startup
 config.validate_config()
@@ -168,6 +170,77 @@ def media_command(bot, msg):
     except Exception as e:
         msg.reply(f"❌ Failed to scrape media: {str(e)}")
         logger.error(f"Media scraping error for {url}: {e}")
+
+@bot.on_message(filters.private & filters.command('archive'))
+def archive_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    # Extract URL from command
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /archive <url>\n\nExample: /archive https://example.com\n\nThis will recursively download up to 50 pages from the website.")
+        return
+    
+    url = parts[1].strip()
+    
+    # Check rate limits
+    if not check_rate_limit(user_id):
+        msg.reply(constants.ERROR_RATE_LIMIT)
+        return
+    
+    if not check_daily_limit(user_id):
+        msg.reply("📅 Daily limit reached (15 requests/day).")
+        return
+    
+    # Validate URL
+    if not is_valid_url(url):
+        msg.reply(constants.ERROR_INVALID_URL)
+        return
+    
+    processing_msg = msg.reply("⏳ Starting recursive download...\n\nThis may take a few minutes.")
+    
+    try:
+        domain = extract_domain(url)
+        output_dir = f"archive_{domain}_{user_id}"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Start recursive download
+        dm = DownloadManager(max_depth=2, max_files=50, delay=1)
+        dm.recursive_download(url, output_dir)
+        
+        stats = dm.get_stats()
+        
+        if stats['total_downloaded'] > 0:
+            processing_msg.edit(f"📦 Creating archive... Downloaded {stats['total_downloaded']} pages")
+            
+            # Create ZIP archive
+            zip_filename = f"archive_{domain}.zip"
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file in stats['files']:
+                    zipf.write(file, os.path.basename(file))
+            
+            # Send archive
+            msg.reply_document(
+                zip_filename,
+                caption=f"✅ **Website Archive**\n\n🌐 Domain: `{domain}`\n📄 Pages: {stats['total_downloaded']}\n📦 Size: {format_file_size(os.path.getsize(zip_filename))}"
+            )
+            
+            # Cleanup
+            try:
+                os.remove(zip_filename)
+                shutil.rmtree(output_dir)
+            except Exception:
+                pass
+            
+            processing_msg.delete()
+        else:
+            msg.reply("❌ Failed to download any pages from the website.")
+        
+        request_stats[user_id] += 1
+        
+    except Exception as e:
+        msg.reply(f"❌ Archive failed: {str(e)}")
+        logger.error(f"Archive error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('admin'))
 def admin_command(bot, msg):
