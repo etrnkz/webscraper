@@ -31,6 +31,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 # Request settings
 REQUEST_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
+REQUEST_DELAY = float(os.getenv('REQUEST_DELAY', '0.5'))  # Delay between requests
 REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }

@@ -381,7 +381,7 @@ def scrap(bot, msg):
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if attempt < config.MAX_RETRIES - 1:
                 logger.warning(f"Attempt {attempt + 1} failed for {url}, retrying...")
-                time.sleep(2)
+                time.sleep(config.REQUEST_DELAY * (attempt + 1))  # Exponential backoff
                 continue
             else:
                 raise
