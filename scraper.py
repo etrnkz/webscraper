@@ -19,6 +19,7 @@ import media_scraper
 import shutil
 from download_manager import DownloadManager
 import zipfile
+from robots_checker import robots_checker
 
 # Validate configuration on startup
 config.validate_config()
@@ -337,6 +338,12 @@ def scrap(bot, msg):
     if not is_safe_domain(domain):
         msg.reply("⚠️ This domain is flagged as potentially unsafe. Request blocked.")
         logger.warning(f"Unsafe domain blocked: {domain}")
+        return
+    
+    # Check robots.txt
+    if not robots_checker.can_fetch(url):
+        msg.reply("🤖 This URL is disallowed by robots.txt. Respecting website's crawling policy.")
+        logger.info(f"URL blocked by robots.txt: {url}")
         return
     
     logger.info(f"Processing URL request from user {user_id}: {url}")
