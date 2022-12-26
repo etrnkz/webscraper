@@ -28,6 +28,7 @@ HELP_MESSAGE = """
 /help - Show this help message
 /stats - Show your usage statistics
 /version - Show bot version
+/info <url> - Get webpage metadata and information
 /media <url> - Download media from webpage (images, videos, etc.)
 /archive <url> - Recursively download entire website (max 50 pages)
 

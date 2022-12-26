@@ -20,6 +20,7 @@ import shutil
 from download_manager import DownloadManager
 import zipfile
 from robots_checker import robots_checker
+from metadata_extractor import extract_metadata, format_metadata
 
 # Validate configuration on startup
 config.validate_config()
@@ -102,6 +103,44 @@ def stats_command(bot, msg):
 @bot.on_message(filters.private & filters.command('version'))
 def version_command(bot, msg):
     msg.reply(f"🤖 **{constants.BOT_NAME}**\nVersion: `{constants.BOT_VERSION}`")
+
+@bot.on_message(filters.private & filters.command('info'))
+def info_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    # Extract URL from command
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /info <url>\n\nExample: /info https://example.com")
+        return
+    
+    url = parts[1].strip()
+    
+    # Validate URL
+    if not is_valid_url(url):
+        msg.reply(constants.ERROR_INVALID_URL)
+        return
+    
+    processing_msg = msg.reply("⏳ Fetching page information...")
+    
+    try:
+        headers = get_random_headers()
+        proxies = config.get_proxies()
+        response = requests.get(url, timeout=config.REQUEST_TIMEOUT, headers=headers, proxies=proxies)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        metadata = extract_metadata(soup)
+        
+        # Format response
+        info_text = f"ℹ️ **Page Information**\n\n🌐 **URL:** `{url}`\n\n{format_metadata(metadata)}"
+        
+        msg.reply(info_text, disable_web_page_preview=True)
+        processing_msg.delete()
+        
+    except Exception as e:
+        msg.reply(f"❌ Failed to fetch page info: {str(e)}")
+        logger.error(f"Info command error for {url}: {e}")
 
 @bot.on_message(filters.private & filters.command('media'))
 def media_command(bot, msg):
