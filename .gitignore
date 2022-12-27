@@ -48,6 +48,11 @@ source_*.txt
 # Cache directory
 cache/
 
+# Media and archive downloads
+media_*/
+archive_*/
+*.zip
+
 # gbd configuration
 .git-backdate/
 
