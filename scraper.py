@@ -298,6 +298,10 @@ def admin_command(bot, msg):
     uptime = datetime.now() - bot_start_time
     uptime_str = str(uptime).split('.')[0]  # Remove microseconds
     
+    # Get performance stats
+    from performance import get_performance_stats
+    perf_stats = get_performance_stats()
+    
     admin_text = f"""
 🔧 **Admin Statistics:**
 
@@ -306,12 +310,15 @@ def admin_command(bot, msg):
 ❌ Total errors: {total_errors}
 📈 Avg requests/user: {avg_requests:.2f}
 ⏰ Uptime: {uptime_str}
+💾 Cache hit rate: {perf_stats['cache_hit_rate']:.1f}%
 ⚡ Rate limit: {config.RATE_LIMIT}/min
+📅 Daily limit: {config.DAILY_LIMIT}/day
 💾 Max file size: {config.MAX_FILE_SIZE // (1024*1024)}MB
 🔄 Max retries: {config.MAX_RETRIES}
 
 **Commands:**
 /broadcast <message> - Send message to all users
+/clearcache - Clear all cached content
 """
     msg.reply(admin_text)
 
@@ -343,6 +350,22 @@ def broadcast_command(bot, msg):
             logger.error(f"Failed to send broadcast to {uid}: {e}")
     
     msg.reply(f"✅ Broadcast sent!\n\n✓ Success: {success}\n✗ Failed: {failed}")
+
+@bot.on_message(filters.private & filters.command('clearcache'))
+def clearcache_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    try:
+        cache.clear_expired_cache()
+        msg.reply("✅ Cache cleared successfully!")
+        logger.info(f"Cache cleared by admin {user_id}")
+    except Exception as e:
+        msg.reply(f"❌ Failed to clear cache: {str(e)}")
+        logger.error(f"Cache clear error: {e}")
 
 
 	
