@@ -4,6 +4,7 @@ import json
 import hashlib
 from datetime import datetime, timedelta
 import logging
+from performance import record_cache_hit, record_cache_miss
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,15 @@ def get_cached_content(url):
                 metadata = json.load(f)
             
             logger.info(f"Cache hit for URL: {url}")
+            record_cache_hit()
             return content, metadata
         except Exception as e:
             logger.error(f"Error reading cache: {e}")
+            record_cache_miss()
             return None, None
     
     logger.info(f"Cache miss for URL: {url}")
+    record_cache_miss()
     return None, None
 
 
