@@ -21,6 +21,7 @@ from download_manager import DownloadManager
 import zipfile
 from robots_checker import robots_checker
 from metadata_extractor import extract_metadata, format_metadata
+from admin_panel import admin_panel
 
 # Validate configuration on startup
 config.validate_config()
@@ -86,7 +87,14 @@ def check_daily_limit(user_id):
 
 @bot.on_message(filters.private & filters.command('start'))
 def start(bot, msg):
-    msg.reply(constants.WELCOME_MESSAGE.format(name=msg.from_user.first_name))
+    user_id = msg.from_user.id
+    username = msg.from_user.username
+    first_name = msg.from_user.first_name
+    
+    # Register user in admin panel
+    admin_panel.register_user(user_id, username, first_name)
+    
+    msg.reply(constants.WELCOME_MESSAGE.format(name=first_name))
 
 @bot.on_message(filters.private & filters.command('help'))
 def help_command(bot, msg):
@@ -374,6 +382,16 @@ def scrap(bot, msg):
     url = msg.text.strip()
     user_id = msg.from_user.id
     
+    # Register user activity
+    admin_panel.register_user(user_id, msg.from_user.username, msg.from_user.first_name)
+    
+    # Check if user is banned
+    if admin_panel.is_banned(user_id):
+        msg.reply("🚫 You have been banned from using this bot. Contact admin for more information.")
+        admin_panel.record_block(user_id)
+        logger.warning(f"Banned user {user_id} attempted to use bot")
+        return
+    
     # Check rate limit
     if not check_rate_limit(user_id):
         msg.reply(constants.ERROR_RATE_LIMIT)
@@ -512,6 +530,7 @@ def scrap(bot, msg):
             pass  # Message might already be deleted
             
         request_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=True)
         logger.info(f"Successfully sent source code for {url}")
         
         # Clean up temporary file
@@ -523,23 +542,28 @@ def scrap(bot, msg):
     except requests.exceptions.Timeout:
         msg.reply(constants.ERROR_TIMEOUT)
         error_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=False)
         logger.error(f"Timeout error for URL: {url}")
     except requests.exceptions.ConnectionError:
         msg.reply(constants.ERROR_CONNECTION)
         error_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=False)
         logger.error(f"Connection error for URL: {url}")
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code
         msg.reply(f"❌ HTTP Error {status_code}. The server returned an error response.")
         error_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=False)
         logger.error(f"HTTP {status_code} error for {url}")
     except requests.exceptions.RequestException as e:
         msg.reply(f"❌ Failed to fetch the webpage. Please try again later.")
         error_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=False)
         logger.error(f"Request error for {url}: {e}")
     except Exception as e:
         msg.reply(constants.ERROR_UNEXPECTED)
         error_stats[user_id] += 1
+        admin_panel.record_request(user_id, success=False)
         logger.error(f"Unexpected error processing {url}: {e}")
 
        
