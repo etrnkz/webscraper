@@ -1,7 +1,7 @@
 """Bot constants and messages"""
 
 # Bot info
-BOT_VERSION = "2.1.0"
+BOT_VERSION = "2.2.0"
 BOT_NAME = "Web Scraper Bot"
 
 # Welcome messages
