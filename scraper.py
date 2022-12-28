@@ -22,6 +22,7 @@ import zipfile
 from robots_checker import robots_checker
 from metadata_extractor import extract_metadata, format_metadata
 from admin_panel import admin_panel
+from activity_logger import activity_logger
 
 # Validate configuration on startup
 config.validate_config()
@@ -332,6 +333,7 @@ def admin_command(bot, msg):
 /userinfo <user_id> - Get detailed user information
 /ban <user_id> - Ban a user
 /unban <user_id> - Unban a user
+/logs [user_id] - View activity logs
 """
     msg.reply(admin_text)
 
@@ -566,6 +568,7 @@ def scrap(bot, msg):
     
     # Register user activity
     admin_panel.register_user(user_id, msg.from_user.username, msg.from_user.first_name)
+    activity_logger.log_activity(user_id, "scrape_request", url)
     
     # Check if user is banned
     if admin_panel.is_banned(user_id):
@@ -756,3 +759,30 @@ def show(bot, msg):
     
 logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
 bot.run()
+
+@bot.on_message(filters.private & filters.command('logs'))
+def logs_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    parts = msg.text.split(maxsplit=1)
+    
+    if len(parts) >= 2:
+        # Show logs for specific user
+        try:
+            target_user_id = int(parts[1])
+            activities = activity_logger.get_user_activities(target_user_id, limit=20)
+            formatted = activity_logger.format_activities(activities, limit=20)
+            
+            msg.reply(f"📋 **Activity Logs for User {target_user_id}:**\n\n```\n{formatted}\n```")
+        except ValueError:
+            msg.reply("❌ Invalid user ID. Must be a number.")
+    else:
+        # Show recent logs for all users
+        activities = activity_logger.get_recent_activities(limit=30)
+        formatted = activity_logger.format_activities(activities, limit=30)
+        
+        msg.reply(f"📋 **Recent Activity Logs:**\n\n```\n{formatted}\n```")
