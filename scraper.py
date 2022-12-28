@@ -327,6 +327,11 @@ def admin_command(bot, msg):
 **Commands:**
 /broadcast <message> - Send message to all users
 /clearcache - Clear all cached content
+/users - List all users
+/topusers - Show top 10 users by activity
+/userinfo <user_id> - Get detailed user information
+/ban <user_id> - Ban a user
+/unban <user_id> - Unban a user
 """
     msg.reply(admin_text)
 
@@ -374,6 +379,157 @@ def clearcache_command(bot, msg):
     except Exception as e:
         msg.reply(f"❌ Failed to clear cache: {str(e)}")
         logger.error(f"Cache clear error: {e}")
+
+@bot.on_message(filters.private & filters.command('users'))
+def users_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    stats = admin_panel.get_statistics()
+    active_users = admin_panel.get_active_users(24)
+    
+    user_list = admin_panel.format_user_list(active_users, limit=20)
+    
+    users_text = f"""
+👥 **User Management**
+
+📊 **Statistics:**
+Total users: {stats['total_users']}
+Active (24h): {stats['active_24h']}
+Total requests: {stats['total_requests']}
+Total errors: {stats['total_errors']}
+Blocked requests: {stats['total_blocks']}
+
+**Active Users (Last 24h):**
+{user_list}
+"""
+    msg.reply(users_text)
+
+@bot.on_message(filters.private & filters.command('topusers'))
+def topusers_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    top_users = admin_panel.get_top_users(10)
+    user_list = admin_panel.format_user_list(top_users, limit=10)
+    
+    msg.reply(f"🏆 **Top 10 Users by Activity:**\n\n{user_list}")
+
+@bot.on_message(filters.private & filters.command('userinfo'))
+def userinfo_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /userinfo <user_id>")
+        return
+    
+    try:
+        target_user_id = int(parts[1])
+        user_info = admin_panel.get_user_info(target_user_id)
+        
+        if not user_info or not user_info['first_seen']:
+            msg.reply(f"❌ User {target_user_id} not found.")
+            return
+        
+        name = user_info['first_name'] or user_info['username'] or f"User {target_user_id}"
+        status = "🚫 Banned" if not user_info['is_active'] else "✅ Active"
+        
+        info_text = f"""
+👤 **User Information**
+
+**ID:** `{target_user_id}`
+**Name:** {name}
+**Username:** @{user_info['username'] or 'N/A'}
+**Status:** {status}
+
+📊 **Activity:**
+Total requests: {user_info['total_requests']}
+Total errors: {user_info['total_errors']}
+Blocked requests: {user_info['blocked_count']}
+Success rate: {((user_info['total_requests'] - user_info['total_errors']) / user_info['total_requests'] * 100) if user_info['total_requests'] > 0 else 0:.1f}%
+
+⏰ **Timeline:**
+First seen: {user_info['first_seen'].strftime('%Y-%m-%d %H:%M')}
+Last seen: {user_info['last_seen'].strftime('%Y-%m-%d %H:%M')}
+"""
+        msg.reply(info_text)
+    except ValueError:
+        msg.reply("❌ Invalid user ID. Must be a number.")
+    except Exception as e:
+        msg.reply(f"❌ Error: {str(e)}")
+        logger.error(f"Userinfo error: {e}")
+
+@bot.on_message(filters.private & filters.command('ban'))
+def ban_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /ban <user_id>")
+        return
+    
+    try:
+        target_user_id = int(parts[1])
+        
+        if target_user_id in config.ADMIN_IDS:
+            msg.reply("❌ Cannot ban an admin user.")
+            return
+        
+        admin_panel.ban_user(target_user_id)
+        msg.reply(f"✅ User {target_user_id} has been banned.")
+        
+        # Notify the banned user
+        try:
+            bot.send_message(target_user_id, "🚫 You have been banned from using this bot.")
+        except Exception:
+            pass
+    except ValueError:
+        msg.reply("❌ Invalid user ID. Must be a number.")
+    except Exception as e:
+        msg.reply(f"❌ Error: {str(e)}")
+
+@bot.on_message(filters.private & filters.command('unban'))
+def unban_command(bot, msg):
+    user_id = msg.from_user.id
+    
+    if user_id not in config.ADMIN_IDS:
+        msg.reply(constants.ERROR_PERMISSION_DENIED)
+        return
+    
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        msg.reply("❌ Usage: /unban <user_id>")
+        return
+    
+    try:
+        target_user_id = int(parts[1])
+        admin_panel.unban_user(target_user_id)
+        msg.reply(f"✅ User {target_user_id} has been unbanned.")
+        
+        # Notify the user
+        try:
+            bot.send_message(target_user_id, "✅ You have been unbanned. You can now use the bot again.")
+        except Exception:
+            pass
+    except ValueError:
+        msg.reply("❌ Invalid user ID. Must be a number.")
+    except Exception as e:
+        msg.reply(f"❌ Error: {str(e)}")
 
 
 	
