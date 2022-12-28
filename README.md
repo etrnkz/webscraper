@@ -18,9 +18,14 @@ A Telegram bot that downloads and sends webpage source code.
 - 🔄 Automatic retry with exponential backoff
 - 🎯 URL validation and security checks
 - 🗺️ Sitemap.xml parsing for URL discovery
+- 👥 Comprehensive admin panel with user monitoring
+- 🚫 User ban/unban system
+- 📋 Activity logging and tracking
+- 📢 Targeted broadcast messaging
 
 ## Commands
 
+### User Commands
 - `/start` - Start the bot
 - `/help` - Show help message
 - `/stats` - View your usage statistics
@@ -28,9 +33,18 @@ A Telegram bot that downloads and sends webpage source code.
 - `/info <url>` - Get webpage metadata
 - `/media <url>` - Download media from webpage
 - `/archive <url>` - Recursively download website
-- `/admin` - Admin panel (admin only)
-- `/broadcast <msg>` - Send announcement (admin only)
-- `/clearcache` - Clear cache (admin only)
+
+### Admin Commands
+- `/admin` - Admin panel with statistics
+- `/users` - List all users with activity
+- `/topusers` - Show top 10 most active users
+- `/userinfo <user_id>` - Get detailed user information
+- `/ban <user_id>` - Ban a user from using the bot
+- `/unban <user_id>` - Unban a previously banned user
+- `/broadcast <message>` - Send message to all users
+- `/broadcast active <message>` - Send to active users only
+- `/logs [user_id]` - View activity logs
+- `/clearcache` - Clear cached content
 
 ## Setup
 
