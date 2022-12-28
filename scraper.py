@@ -347,22 +347,48 @@ def broadcast_command(bot, msg):
     # Extract message after command
     broadcast_text = msg.text.split(maxsplit=1)
     if len(broadcast_text) < 2:
-        msg.reply("❌ Usage: /broadcast <message>")
+        msg.reply("❌ Usage: /broadcast <message>\n\nOptions:\n/broadcast all <message> - Send to all users\n/broadcast active <message> - Send to active users (24h)")
         return
     
-    broadcast_text = broadcast_text[1]
+    full_text = broadcast_text[1]
+    parts = full_text.split(maxsplit=1)
+    
+    # Check for targeting
+    target = "all"
+    message = full_text
+    
+    if len(parts) >= 2 and parts[0].lower() in ['all', 'active']:
+        target = parts[0].lower()
+        message = parts[1]
+    
+    # Get target users
+    if target == 'active':
+        target_users = [uid for uid, _ in admin_panel.get_active_users(24)]
+        target_desc = "active users (24h)"
+    else:
+        target_users = list(admin_panel.get_all_users().keys())
+        target_desc = "all users"
+    
+    if not target_users:
+        msg.reply("❌ No users to broadcast to.")
+        return
+    
+    # Confirm broadcast
+    confirm_msg = msg.reply(f"📢 Broadcasting to {len(target_users)} {target_desc}...")
+    
     success = 0
     failed = 0
     
-    for uid in request_stats.keys():
+    for uid in target_users:
         try:
-            bot.send_message(uid, f"📢 **Broadcast Message:**\n\n{broadcast_text}")
+            bot.send_message(uid, f"📢 **Broadcast Message:**\n\n{message}")
             success += 1
+            time.sleep(0.05)  # Small delay to avoid flooding
         except Exception as e:
             failed += 1
             logger.error(f"Failed to send broadcast to {uid}: {e}")
     
-    msg.reply(f"✅ Broadcast sent!\n\n✓ Success: {success}\n✗ Failed: {failed}")
+    confirm_msg.edit(f"✅ Broadcast complete!\n\n✓ Sent: {success}\n✗ Failed: {failed}\n📊 Target: {target_desc}")
 
 @bot.on_message(filters.private & filters.command('clearcache'))
 def clearcache_command(bot, msg):
