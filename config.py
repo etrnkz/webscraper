@@ -55,6 +55,16 @@ def get_proxies():
 # Admin settings
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x.strip()]
 
+# Force subscribe settings
+FORCE_SUBSCRIBE_ENABLED = os.getenv('FORCE_SUBSCRIBE_ENABLED', 'false').lower() == 'true'
+FORCE_SUBSCRIBE_CHANNELS = [x.strip() for x in os.getenv('FORCE_SUBSCRIBE_CHANNELS', '').split(',') if x.strip()]
+
+# Convert channel IDs to integers
+try:
+    FORCE_SUBSCRIBE_CHANNELS = [int(ch) if ch.lstrip('-').isdigit() else ch for ch in FORCE_SUBSCRIBE_CHANNELS]
+except ValueError:
+    FORCE_SUBSCRIBE_CHANNELS = []
+
 # Logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
