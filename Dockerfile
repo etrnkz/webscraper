@@ -16,4 +16,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python3 -c "import sys; sys.exit(0)"
 
 # Run the bot
-CMD ["python3", "scraper.py"]
+CMD ["python3", "webharvest.py"]

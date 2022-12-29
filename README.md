@@ -1,6 +1,41 @@
-# Telegram Web Scraper Bot
+# WebHarvest Bot 🌐🤖
 
-A Telegram bot that downloads and sends webpage source code.
+A powerful, enterprise-grade Telegram bot for web scraping, archiving, and media extraction with advanced anti-bot detection and comprehensive admin controls.
+
+## Project Structure
+
+```
+webharvest-bot/
+├── webharvest.py          # Main entry point
+├── bot/
+│   ├── __init__.py
+│   ├── config.py          # Configuration management
+│   ├── constants.py       # Bot constants and messages
+│   ├── core/              # Core bot functionality
+│   │   └── scraper.py     # Main bot logic
+│   ├── utils/             # Utility functions
+│   │   ├── helpers.py     # Helper functions
+│   │   ├── validators.py  # Input validation
+│   │   └── user_agents.py # User agent rotation
+│   ├── modules/           # Feature modules
+│   │   ├── cache_manager.py      # Caching system
+│   │   ├── media_extractor.py    # Media scraping
+│   │   ├── web_archiver.py       # Website archiving
+│   │   ├── metadata_parser.py    # Metadata extraction
+│   │   ├── sitemap_crawler.py    # Sitemap parsing
+│   │   └── robots_handler.py     # Robots.txt compliance
+│   ├── admin/             # Admin panel
+│   │   ├── panel.py              # User management
+│   │   └── activity_tracker.py   # Activity logging
+│   ├── plugins/           # Bot plugins
+│   │   ├── force_subscribe.py    # Channel subscription
+│   │   └── handlers.py           # Message handlers
+│   └── monitoring/        # Performance monitoring
+│       └── performance.py        # Metrics tracking
+├── requirements.txt
+├── Dockerfile
+└── .env.example
+```
 
 ## Features
 
@@ -51,7 +86,7 @@ A Telegram bot that downloads and sends webpage source code.
 1. Clone the repository
 2. Install dependencies: `pip install -r requirements.txt`
 3. Create `.env` file with your credentials (see `.env.example`)
-4. Run: `python scraper.py`
+4. Run: `python webharvest.py`
 
 ## Environment Variables
 

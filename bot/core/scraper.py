@@ -7,28 +7,32 @@ import re
 from urllib.parse import urlparse
 from collections import defaultdict
 from datetime import datetime, timedelta
-import config
+import bot.config as config
 import chardet
 import time
-from utils import sanitize_filename, format_file_size, extract_domain
-import constants
-from validators import is_valid_url, is_safe_domain
-from user_agents import get_random_headers
-import cache
-import media_scraper
+from bot.utils.helpers import sanitize_filename, format_file_size, extract_domain
+from bot import constants
+from bot.utils.validators import is_valid_url, is_safe_domain
+from bot.utils.user_agents import get_random_headers
+import bot.modules.cache_manager as cache
+from bot.modules import media_extractor
 import shutil
-from download_manager import DownloadManager
+from bot.modules.web_archiver import DownloadManager
 import zipfile
-from robots_checker import robots_checker
-from metadata_extractor import extract_metadata, format_metadata
-from admin_panel import admin_panel
-from activity_logger import activity_logger
+from bot.modules.robots_handler import robots_checker
+from bot.modules.metadata_parser import extract_metadata, format_metadata
+from bot.admin.panel import admin_panel
+from bot.admin.activity_tracker import activity_logger
+from bot.plugins.force_subscribe import ForceSubscribe
 
 # Validate configuration on startup
 config.validate_config()
 
 # Initialize cache
 cache.init_cache()
+
+# Initialize force subscribe
+force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
 
 # Configure logging
 logging.basicConfig(
