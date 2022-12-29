@@ -1,12 +1,12 @@
-# WebHarvest Bot 🌐🤖
+# webscraper-
 
 A powerful, enterprise-grade Telegram bot for web scraping, archiving, and media extraction with advanced anti-bot detection and comprehensive admin controls.
 
 ## Project Structure
 
 ```
-webharvest-bot/
-├── webharvest.py          # Main entry point
+webscraper-bot/
+├── main.py                # Main entry point
 ├── bot/
 │   ├── __init__.py
 │   ├── config.py          # Configuration management
@@ -86,7 +86,7 @@ webharvest-bot/
 1. Clone the repository
 2. Install dependencies: `pip install -r requirements.txt`
 3. Create `.env` file with your credentials (see `.env.example`)
-4. Run: `python webharvest.py`
+4. Run: `python main.py`
 
 ## Environment Variables
 

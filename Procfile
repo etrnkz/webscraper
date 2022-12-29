@@ -1,1 +1,1 @@
-worker: python3 webharvest.py
+worker: python3 main.py

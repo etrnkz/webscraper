@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WebHarvest Bot - Advanced Web Scraping Telegram Bot
+Web Scraper Bot - Advanced Web Scraping Telegram Bot
 Main entry point for the application
 """
 
