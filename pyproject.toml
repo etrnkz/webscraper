@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "webharvest-bot"
+version = "2.3.0"
+description = "A powerful Telegram bot for web scraping, archiving, and media extraction"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["telegram", "bot", "web-scraper", "pyrogram"]
+dependencies = [
+    "pyrogram==2.0.106",
+    "TgCrypto==1.2.5",
+    "requests==2.28.1",
+    "beautifulsoup4==4.11.1",
+    "lxml==4.9.1",
+    "chardet==5.0.0",
+    "Flask==2.2.2",
+    "gunicorn==20.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true

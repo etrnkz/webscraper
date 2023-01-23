@@ -31,9 +31,6 @@ config.validate_config()
 # Initialize cache
 cache.init_cache()
 
-# Initialize force subscribe
-force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
-
 # Configure logging
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -52,6 +49,9 @@ bot = Client(
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
+
+# Initialize force subscribe after bot is defined
+force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
 
 # Rate limiting: track user requests
 user_requests = defaultdict(list)
@@ -196,7 +196,7 @@ def media_command(bot, msg):
         processing_msg.edit("📥 Downloading media files...")
         
         # Download images only for now
-        downloaded = media_scraper.scrape_media(url, soup, output_dir, ['images'])
+        downloaded = media_extractor.scrape_media(url, soup, output_dir, ['images'])
         
         if downloaded:
             processing_msg.edit(f"📤 Sending {len(downloaded)} files...")
@@ -312,7 +312,7 @@ def admin_command(bot, msg):
     uptime_str = str(uptime).split('.')[0]  # Remove microseconds
     
     # Get performance stats
-    from performance import get_performance_stats
+    from bot.monitoring.performance import get_performance_stats
     perf_stats = get_performance_stats()
     
     admin_text = f"""
@@ -489,7 +489,7 @@ def userinfo_command(bot, msg):
 Total requests: {user_info['total_requests']}
 Total errors: {user_info['total_errors']}
 Blocked requests: {user_info['blocked_count']}
-Success rate: {((user_info['total_requests'] - user_info['total_errors']) / user_info['total_requests'] * 100) if user_info['total_requests'] > 0 else 0:.1f}%
+Success rate: {((user_info['total_requests'] - user_info['total_errors']) / user_info['total_requests'] * 100) if user_info['total_requests'] > 0 else 0.0:.1f}%
 
 ⏰ **Timeline:**
 First seen: {user_info['first_seen'].strftime('%Y-%m-%d %H:%M')}
@@ -759,10 +759,6 @@ def scrap(bot, msg):
 @bot.on_message(filters.private & filters.text)
 def show(bot, msg):
     msg.reply(text="**Your link must start from http like:\nhttps://www.google.com\n\nFor more feel free to contact the** [Developer](https://t.me/e_phador)", disable_web_page_preview=True, quote=True)
-	    
-    
-logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
-bot.run()
 
 @bot.on_message(filters.private & filters.command('logs'))
 def logs_command(bot, msg):
@@ -790,3 +786,6 @@ def logs_command(bot, msg):
         formatted = activity_logger.format_activities(activities, limit=30)
         
         msg.reply(f"📋 **Recent Activity Logs:**\n\n```\n{formatted}\n```")
+    
+logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
+bot.run()

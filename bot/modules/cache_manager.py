@@ -4,7 +4,7 @@ import json
 import hashlib
 from datetime import datetime, timedelta
 import logging
-from performance import record_cache_hit, record_cache_miss
+from bot.monitoring.performance import record_cache_hit, record_cache_miss
 
 logger = logging.getLogger(__name__)
 

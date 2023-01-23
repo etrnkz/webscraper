@@ -2,9 +2,9 @@
 from pyrogram import filters
 import logging
 from collections import defaultdict
-import constants
-from validators import is_valid_url, is_safe_domain
-from utils import extract_domain
+from bot import constants
+from bot.utils.validators import is_valid_url, is_safe_domain
+from bot.utils.helpers import extract_domain
 
 logger = logging.getLogger(__name__)
 

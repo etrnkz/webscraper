@@ -4,7 +4,7 @@ import logging
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import requests
-from user_agents import get_random_headers
+from bot.utils.user_agents import get_random_headers
 import time
 
 logger = logging.getLogger(__name__)

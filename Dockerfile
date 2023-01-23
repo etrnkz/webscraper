@@ -1,17 +1,22 @@
+FROM python:3.10-slim AS builder
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
 FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt /app/
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
 
-RUN pip3 install --no-cache-dir -r requirements.txt
+COPY . .
 
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
+USER appuser
 
-COPY . /app
-
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python3 -c "import sys; sys.exit(0)"
-
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD python3 -c "import requests; requests.get('http://localhost:8080', timeout=5)"
 
 CMD ["python3", "main.py"]
