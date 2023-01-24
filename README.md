@@ -1,84 +1,56 @@
-## webscraper-
+<div align="center">
+  <h1>🌐 WebHarvest Bot</h1>
+  <p><strong>Advanced Telegram Bot for Web Scraping, Archiving &amp; Media Extraction</strong></p>
 
-A powerful Telegram bot for web scraping, archiving, and media extraction with advanced anti-bot detection and comprehensive admin controls.
+  <p>
+    <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python">
+    <img src="https://img.shields.io/badge/version-2.3.0-green" alt="Version">
+    <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
+    <img src="https://img.shields.io/badge/telegram-pyrogram-blueviolet" alt="Pyrogram">
+  </p>
+</div>
 
+---
 
-### Features
+A powerful Telegram bot for web scraping, archiving, and media extraction with advanced anti-bot detection, comprehensive admin controls, and enterprise-grade security features.
 
--  Download HTML source code from any webpage
--  Extract and download media (images, videos, CSS, JS)
--  Recursive website archiving 
--  Extract comprehensive webpage metadata
--  caching system
--  File size validation (50MB max)
--  Anti-bot detection 
--  Optional proxy support
--  Robots.txt compliance checking
--  User statistics and performance metrics
--  URL validation
--  Sitemap.xml parsing for URL discovery
--  admin panel with user monitoring
--  User ban/unban 
--  Activity logging and tracking
--  broadcast messaging
+---
 
-### Commands
+## ✨ Features
 
-#### User Commands
-- `/start` - Start the bot
-- `/help` - Show help message
-- `/stats` - View your usage statistics
-- `/version` - Show bot version
-- `/info <url>` - Get webpage metadata
-- `/media <url>` - Download media from webpage
-- `/archive <url>` - Recursively download website
+### 🌐 Core Scraping
+- **HTML Source Download** — Fetch and download the complete HTML source code from any webpage
+- **URL Validation** — Robust validation ensuring only valid `http`/`https` URLs are processed
+- **Domain Safety Checks** — Blocks malicious TLDs (`.tk`, `.ml`, `.ga`, `.cf`, `.gq`) and private IP ranges
+- **File Size Limits** — Configurable 50MB maximum file size protection
+- **Encoding Detection** — Automatic charset detection with `chardet` for proper text rendering
 
-#### Admin Commands
-- `/admin` - Admin panel with statistics
-- `/users` - List all users with activity
-- `/topusers` - Show top 10 most active users
-- `/userinfo <user_id>` - Get detailed user information
-- `/ban <user_id>` - Ban a user from using the bot
-- `/unban <user_id>` - Unban a previously banned user
-- `/broadcast <message>` - Send message to all users
-- `/broadcast active <message>` - Send to active users only
-- `/logs [user_id]` - View activity logs
-- `/clearcache` - Clear cached content
+## 🚀 Quick Start
 
-### Setup
+### Prerequisites
+- Python 3.10 or higher
+- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
+- Telegram API ID and Hash (from [my.telegram.org](https://my.telegram.org))
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Create `.env` file with your credentials (see `.env.example`)
-4. Run: `python main.py`
+### Installation
 
-## Environment Variables
-
-```
-API_ID=your_api_id
-API_HASH=your_api_hash
-BOT_TOKEN=your_bot_token
-ADMIN_IDS=user_ids
-LOG_LEVEL=INFO
-PROXY_ENABLED=false
-PROXY_HTTP=http://proxy:port
-PROXY_HTTPS=https://proxy:port
-```
-
-### Deployment
-
-#### Docker
 ```bash
-docker build -t telegram-scraper .
-docker run -d telegram-scraper
+git clone https://github.com/yourusername/webharvest-bot.git
+cd webharvest-bot
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your Telegram credentials
+python main.py
 ```
 
-#### Heroku
-```bash
-heroku create
-git push heroku main
-```
+## 📋 Commands
 
-### License
-
-MIT & APACHE
+| Command | Description |
+|---------|-------------|
+| `/start` | Start the bot and register your account |
+| `/help` | Display help message with usage instructions |
+| `/stats` | View your personal usage statistics |
+| `/version` | Show the current bot version |
+| `/info <url>` | Extract and display webpage metadata |
+| `/media <url>` | Download media files from a webpage |
+| `/archive <url>` | Recursively archive an entire website |
