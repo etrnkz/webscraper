@@ -25,6 +25,27 @@ A powerful Telegram bot for web scraping, archiving, and media extraction with a
 - **File Size Limits** — Configurable 50MB maximum file size protection
 - **Encoding Detection** — Automatic charset detection with `chardet` for proper text rendering
 
+### 📸 Media Extraction
+- **Image Download** — Extract all images from any webpage (including lazy-loaded `data-src`)
+- **Video Download** — Detect and download video files and sources
+- **CSS & JS Assets** — Extract stylesheets and JavaScript files
+- **Smart Deduplication** — Avoids duplicate file downloads with automatic renaming
+
+### 📦 Website Archiving
+- **Recursive Download** — Crawl entire websites with configurable depth (up to 2 levels)
+- **Paginated Archiving** — Automatically discover and archive linked pages within the same domain
+- **ZIP Packaging** — Compress archived pages into a single downloadable ZIP file
+- **Rate-Limited Crawling** — Respectful crawling with configurable delays between requests
+
+### ℹ️ Metadata Parsing
+- **Page Titles** — Extract HTML title tags
+- **Meta Descriptions** — Parse description meta tags
+- **Open Graph** — Support for OG title, description, and image tags
+- **Twitter Cards** — Extract Twitter card metadata
+- **Author & Keywords** — Identify content authors and keyword tags
+- **Language Detection** — Detect page language from `html` lang attribute
+- **Canonical URLs** — Identify canonical URL references
+
 ## 🚀 Quick Start
 
 ### Prerequisites
