@@ -46,6 +46,22 @@ A powerful Telegram bot for web scraping, archiving, and media extraction with a
 - **Language Detection** — Detect page language from `html` lang attribute
 - **Canonical URLs** — Identify canonical URL references
 
+### 👑 Admin Panel
+- **User Monitoring** — Track all users with first seen, last seen, and activity metrics
+- **User Ban/Unban** — Ban abusive users with automatic notification
+- **Admin Protection** — Prevent banning other admin users
+- **User Statistics** — Per-user request counts, error rates, and success percentages
+- **Activity Logging** — Detailed activity logs for all user actions
+- **Broadcast Messaging** — Send announcements to all users or active users only
+- **Cache Management** — Clear cached content with a single command
+
+### 📊 Monitoring & Analytics
+- **Usage Statistics** — Per-user request and error tracking
+- **Performance Metrics** — Execution timing for key operations
+- **Cache Hit Rate** — Track caching efficiency with hit/miss ratio
+- **Uptime Tracking** — Monitor bot uptime since last restart
+- **Success Rate** — Calculate per-user and global success percentages
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -75,3 +91,18 @@ python main.py
 | `/info <url>` | Extract and display webpage metadata |
 | `/media <url>` | Download media files from a webpage |
 | `/archive <url>` | Recursively archive an entire website |
+
+### 🔧 Admin Commands
+
+| Command | Description |
+|---------|-------------|
+| `/admin` | Open admin panel with statistics |
+| `/users` | List all registered users |
+| `/topusers` | Show top 10 most active users |
+| `/userinfo <id>` | Get detailed information about a user |
+| `/ban <id>` | Ban a user from using the bot |
+| `/unban <id>` | Unban a previously banned user |
+| `/broadcast <msg>` | Send message to all users |
+| `/broadcast active <msg>` | Send message to active users only |
+| `/logs [user_id]` | View activity logs |
+| `/clearcache` | Clear all cached content |
