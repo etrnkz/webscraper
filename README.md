@@ -62,6 +62,15 @@ A powerful Telegram bot for web scraping, archiving, and media extraction with a
 - **Uptime Tracking** — Monitor bot uptime since last restart
 - **Success Rate** — Calculate per-user and global success percentages
 
+### 🛡️ Security & Compliance
+- **Robots.txt Compliance** — Respects website crawling policies automatically
+- **Anti-Bot Detection** — Randomized user agent rotation pool (Chrome, Firefox, Safari, Edge)
+- **Request Header Randomization** — Full header set with modern `Sec-Fetch-*` headers
+- **Proxy Support** — Optional HTTP/HTTPS proxy configuration for anonymity
+- **Private IP Blocking** — Blocks requests to localhost, 127.0.0.1, and private network ranges
+- **Malicious TLD Detection** — Automatically blocks known malicious free TLDs
+- **Force Subscription** — Optional channel subscription requirement for bot access
+
 ## 🚀 Quick Start
 
 ### Prerequisites
