@@ -71,6 +71,12 @@ A powerful Telegram bot for web scraping, archiving, and media extraction with a
 - **Malicious TLD Detection** — Automatically blocks known malicious free TLDs
 - **Force Subscription** — Optional channel subscription requirement for bot access
 
+### ⚡ Performance
+- **Intelligent Caching** — 24-hour content caching with automatic expiry
+- **Rate Limiting** — Configurable per-minute (5/min) and daily (15/day) limits
+- **Exponential Backoff** — Automatic retry with progressive delays on failure
+- **Sitemap Discovery** — Parse `sitemap.xml` for URL discovery and batch processing
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -115,3 +121,67 @@ python main.py
 | `/broadcast active <msg>` | Send message to active users only |
 | `/logs [user_id]` | View activity logs |
 | `/clearcache` | Clear all cached content |
+
+## ⚙️ Configuration
+
+All configuration is managed through environment variables:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `API_ID` | Yes | — | Telegram API ID from my.telegram.org |
+| `API_HASH` | Yes | — | Telegram API Hash from my.telegram.org |
+| `BOT_TOKEN` | Yes | — | Bot token from @BotFather |
+| `ADMIN_IDS` | No | — | Comma-separated admin user IDs |
+| `LOG_LEVEL` | No | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `PROXY_ENABLED` | No | `false` | Enable proxy support |
+| `PROXY_HTTP` | No | — | HTTP proxy URL |
+| `PROXY_HTTPS` | No | — | HTTPS proxy URL |
+| `REQUEST_DELAY` | No | `0.5` | Delay between requests in seconds |
+| `FORCE_SUBSCRIBE_ENABLED` | No | `false` | Enable force channel subscription |
+| `FORCE_SUBSCRIBE_CHANNELS` | No | — | Comma-separated channel IDs |
+
+## 🐳 Deployment
+
+### Docker (Recommended)
+
+```bash
+docker build -t webharvest-bot .
+docker run -d \
+  --name webharvest-bot \
+  --restart unless-stopped \
+  --env-file .env \
+  webharvest-bot
+```
+
+### Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+```
+
+### Heroku
+
+```bash
+heroku create webharvest-bot
+heroku config:set API_ID=your_api_id
+heroku config:set API_HASH=your_api_hash
+heroku config:set BOT_TOKEN=your_bot_token
+git push heroku main
+```
+
+## 🛠 Tech Stack
+
+- **Runtime** — Python 3.10+
+- **Framework** — Pyrogram (MTProto-based Telegram client)
+- **Web Scraping** — Requests, BeautifulSoup4, lxml
+- **Web Server** — Flask + Gunicorn (health checks)
+- **Container** — Docker with multi-stage builds
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
