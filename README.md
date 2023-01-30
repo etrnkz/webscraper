@@ -10,7 +10,7 @@
 ╚███╔███╔╝███████╗██████╔╝██║  ██║██║  ██║██║  ██║╚██████╔╝███████║███████╗   ██║   
  ╚══╝╚══╝ ╚══════╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝   ╚═╝   
                                                                                        
-**WebHarvest Bot** — *Your personal web scraping army in Telegram*
+**WebScraper Bot** — *Your personal web scraping army in Telegram*
 ```
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
@@ -24,7 +24,7 @@
 
 <br>
 
-> **WebHarvest Bot** turns Telegram into a powerful web scraping command center. Drop a URL and get the full HTML source, extract every media file, archive entire websites, or pull rich metadata — all wrapped in a sleek Telegram interface with enterprise-grade security and a full admin command suite.
+> **WebScraper Bot** turns Telegram into a powerful web scraping command center. Drop a URL and get the full HTML source, extract every media file, archive entire websites, or pull rich metadata — all wrapped in a sleek Telegram interface with enterprise-grade security and a full admin command suite.
 
 ---
 
@@ -196,8 +196,8 @@
 
 ```bash
 # Clone it
-git clone https://github.com/yourusername/webharvest-bot.git
-cd webharvest-bot
+git clone https://github.com/yourusername/webscraper-bot.git
+cd webscraper-bot
 
 # Install deps
 pip install -r requirements.txt
@@ -311,12 +311,12 @@ All configuration lives in **environment variables**. Drop them in a `.env` file
 ### Docker (single command)
 
 ```bash
-docker build -t webharvest-bot .
+docker build -t webscraper-bot .
 docker run -d \
-  --name webharvest-bot \
+  --name webscraper-bot \
   --restart unless-stopped \
   --env-file .env \
-  webharvest-bot
+  webscraper-bot
 ```
 
 ### Docker Compose
@@ -333,7 +333,7 @@ services:
 ### Heroku
 
 ```bash
-heroku create webharvest-bot
+heroku create webscraper-bot
 heroku config:set API_ID=your_api_id API_HASH=your_api_hash BOT_TOKEN=your_bot_token
 git push heroku main
 ```
@@ -343,7 +343,7 @@ git push heroku main
 ## 🏗️ Architecture
 
 ```
-webharvest-bot/
+webscraper-bot/
 ├── main.py                 # Entry point — launches the bot
 ├── bot/
 │   ├── __init__.py         # Package metadata (v2.3.0)
@@ -437,7 +437,7 @@ If you find this project useful, consider:
 ```
 MIT License
 
-Copyright (c) 2022-2023 WebHarvest Bot
+Copyright (c) 2022-2023 WebScraper Bot
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files...
@@ -448,7 +448,7 @@ Full details in the [LICENSE](LICENSE) file.
 ---
 
 <div align="center">
-  <sub>Built with ❤️ and ☕ by the WebHarvest Team</sub>
+  <sub>Built with ❤️ and ☕ by the WebScraper Team</sub>
   <br>
   <sub>Made in Python — powered by Pyrogram</sub>
 </div>
