@@ -59,6 +59,21 @@ user_settings: dict[int, dict] = {}  # user_id -> {cookies_file, subdomains}
 pending_cookie_requests: dict[int, dict] = {}  # user_id -> {url, domain, subdomains, msg_id}
 
 
+# ── DEBUG: catch-all handler to verify update delivery ────────────
+@bot.on_message(filters.all, group=-1)
+async def debug_catch_all(bot, msg):
+    user = msg.from_user
+    uid = user.id if user else "N/A"
+    uname = user.username if user else "N/A"
+    fname = user.first_name if user else "N/A"
+    chat_type = msg.chat.type if msg.chat else "N/A"
+    text = msg.text or msg.caption or "[non-text]"
+    logger.info(
+        "DEBUG_CATCH_ALL | chat_type=%s | user_id=%s | username=%s | first_name=%s | text=%s",
+        chat_type, uid, uname, fname, text[:200]
+    )
+
+
 async def check_force_join(user_id, msg):
     usage = db.get_usage_count(user_id)
     if usage >= config.FREE_USAGE_LIMIT:
@@ -180,6 +195,7 @@ async def handle_callback(bot, callback_query):
 async def start(bot, msg):
     user_id = msg.from_user.id
     first_name = msg.from_user.first_name
+    logger.info("START_HANDLER | user_id=%s | username=%s | first_name=%s", user_id, msg.from_user.username, first_name)
     db.register_user(user_id, msg.from_user.username, first_name)
 
     buttons = InlineKeyboardMarkup([
