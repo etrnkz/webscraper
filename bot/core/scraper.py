@@ -25,6 +25,7 @@ from bot.modules.web_archiver import DownloadManager
 from bot.modules.zip_packager import create_zip, get_dir_size, format_size
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from concurrent.futures import ThreadPoolExecutor
+from bot.services.botapi import upgrade_premium_markup
 
 config.validate_config()
 cache.init_cache()
@@ -205,11 +206,16 @@ async def start(bot, msg):
         [InlineKeyboardButton("💻 Developer", url="https://t.me/etrnkx")],
     ])
 
-    await msg.reply(
+    sent = await msg.reply(
         constants.WELCOME_MESSAGE.format(name=first_name),
         reply_markup=buttons,
         parse_mode=enums.ParseMode.HTML
     )
+    # Upgrade to premium icons via Bot API (best-effort, like AltaMovies)
+    try:
+        await upgrade_premium_markup(sent, buttons)
+    except Exception:
+        pass
 
 
 @bot.on_message(filters.private & filters.command('help'))
