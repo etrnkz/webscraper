@@ -199,19 +199,30 @@ async def start(bot, msg):
     logger.info("START_HANDLER | user_id=%s | username=%s | first_name=%s", user_id, msg.from_user.username, first_name)
     db.register_user(user_id, msg.from_user.username, first_name)
 
-    # Premium custom emojis: ℹ️ 4913977035174446493, 💻 4902196816054846269, 💜 5339364726612713759
+    # Premium welcome via entities (like AltaMovies) — 🕸 520... on header, ⭐️ 531... on list
+    from bot.utils.premium_text import PremiumText
+    pt = PremiumText()
+    pt.add(f"Welcome {first_name}! ").emoji("WEB").add("\n\n")
+    pt.add("I clone entire websites into offline ZIP files ").emoji("WEB").add("\n\n")
+    pt.bold("Features").add("\n")
+    pt.emoji("STAR").add(" Full JS rendering with Chromium\n")
+    pt.emoji("STAR").add(" Auto-downloads videos (YouTube, TikTok, etc.)\n")
+    pt.emoji("STAR").add(" Captures lazy-loaded content\n")
+    pt.emoji("STAR").add(" Cookie auth for login-protected sites\n")
+    pt.emoji("STAR").add(" Smart page prioritization\n")
+    pt.emoji("STAR").add(" Offline link rewriting\n")
+    pt.add("\nSend /help for full details.")
+    text, entities = pt.build()
+
+    # Buttons: keep premium icons via Bot API (ℹ️/💜/💻)
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("ℹ️ Help", callback_data="help"),
          InlineKeyboardButton("💜 Stats", callback_data="stats")],
         [InlineKeyboardButton("💻 Developer", url="https://t.me/etrnkx")],
     ])
 
-    sent = await msg.reply(
-        constants.WELCOME_MESSAGE.format(name=first_name),
-        reply_markup=buttons,
-        parse_mode=enums.ParseMode.HTML
-    )
-    # Upgrade to premium icons via Bot API (best-effort, like AltaMovies)
+    sent = await msg.reply_text(text, entities=entities, reply_markup=buttons)
+    # Upgrade buttons to premium icons via Bot API (best-effort, like AltaMovies)
     try:
         await upgrade_premium_markup(sent, buttons)
     except Exception:
