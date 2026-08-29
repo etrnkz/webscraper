@@ -5,17 +5,17 @@ BOT_NAME = "Web Cloner Bot"
 
 WELCOME_MESSAGE = """Welcome {name}! <tg-emoji emoji-id="5339364726612713759">💜</tg-emoji>
 
-I clone entire websites into offline ZIP files. <tg-emoji emoji-id="4902196816054846269">💻</tg-emoji>
+I clone entire websites into offline ZIP files <tg-emoji emoji-id="4902196816054846269">💻</tg-emoji>
 
-**Features**
-- Full JS rendering with Chromium
-- Auto-downloads videos (YouTube, TikTok, etc.)
-- Captures lazy-loaded content
-- Cookie auth for login-protected sites
-- Smart page prioritization
-- Offline link rewriting
+<b>Features</b>
+<tg-emoji emoji-id="4913977035174446493">ℹ️</tg-emoji> Full JS rendering with Chromium
+<tg-emoji emoji-id="5339364726612713759">💜</tg-emoji> Auto-downloads videos (YouTube, TikTok, etc.)
+<tg-emoji emoji-id="4902196816054846269">💻</tg-emoji> Captures lazy-loaded content
+<tg-emoji emoji-id="4913977035174446493">ℹ️</tg-emoji> Cookie auth for login-protected sites
+<tg-emoji emoji-id="5339364726612713759">💜</tg-emoji> Smart page prioritization
+<tg-emoji emoji-id="4902196816054846269">💻</tg-emoji> Offline link rewriting
 
-Send /help for full details. <tg-emoji emoji-id="4913977035174446493">ℹ️</tg-emoji>
+Send /help for full details.
 """
 
 HELP_MESSAGE = """**Web Cloner Bot**
