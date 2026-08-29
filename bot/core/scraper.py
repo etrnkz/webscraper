@@ -198,10 +198,11 @@ async def start(bot, msg):
     logger.info("START_HANDLER | user_id=%s | username=%s | first_name=%s", user_id, msg.from_user.username, first_name)
     db.register_user(user_id, msg.from_user.username, first_name)
 
+    # Premium custom emojis: ℹ️ 4913977035174446493, 💻 4902196816054846269, 💜 5339364726612713759
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Help", callback_data="help"),
-         InlineKeyboardButton("Stats", callback_data="stats")],
-        [InlineKeyboardButton("Developer", url="https://t.me/etrnkx")],
+        [InlineKeyboardButton("ℹ️ Help", callback_data="help"),
+         InlineKeyboardButton("💜 Stats", callback_data="stats")],
+        [InlineKeyboardButton("💻 Developer", url="https://t.me/etrnkx")],
     ])
 
     await msg.reply(constants.WELCOME_MESSAGE.format(name=first_name), reply_markup=buttons)
