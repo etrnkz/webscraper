@@ -203,7 +203,7 @@ async def start(bot, msg):
     from bot.utils.premium_text import PremiumText
     pt = PremiumText()
     pt.add(f"Welcome {first_name}! ").emoji("WEB").add("\n\n")
-    pt.add("I clone entire websites into offline ZIP files ").emoji("WEB").add("\n\n")
+    pt.add("I clone entire websites into offline ZIP files\n\n")
     pt.bold("Features").add("\n")
     pt.emoji("STAR").add(" Full JS rendering with Chromium\n")
     pt.emoji("STAR").add(" Auto-downloads videos (YouTube, TikTok, etc.)\n")
