@@ -3,9 +3,9 @@
 BOT_VERSION = "3.0.0"
 BOT_NAME = "Web Cloner Bot"
 
-WELCOME_MESSAGE = """Welcome {name}!
+WELCOME_MESSAGE = """Welcome {name}! <tg-emoji emoji-id="5339364726612713759">💜</tg-emoji>
 
-I clone entire websites into offline ZIP files.
+I clone entire websites into offline ZIP files. <tg-emoji emoji-id="4902196816054846269">💻</tg-emoji>
 
 **Features**
 - Full JS rendering with Chromium
@@ -15,7 +15,7 @@ I clone entire websites into offline ZIP files.
 - Smart page prioritization
 - Offline link rewriting
 
-Send /help for full details.
+Send /help for full details. <tg-emoji emoji-id="4913977035174446493">ℹ️</tg-emoji>
 """
 
 HELP_MESSAGE = """**Web Cloner Bot**

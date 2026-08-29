@@ -6,7 +6,7 @@ import asyncio
 import re
 import requests
 from bs4 import BeautifulSoup
-from hydrogram import Client, filters
+from hydrogram import Client, filters, enums
 import logging
 import shutil
 from urllib.parse import urlparse
@@ -205,7 +205,11 @@ async def start(bot, msg):
         [InlineKeyboardButton("💻 Developer", url="https://t.me/etrnkx")],
     ])
 
-    await msg.reply(constants.WELCOME_MESSAGE.format(name=first_name), reply_markup=buttons)
+    await msg.reply(
+        constants.WELCOME_MESSAGE.format(name=first_name),
+        reply_markup=buttons,
+        parse_mode=enums.ParseMode.HTML
+    )
 
 
 @bot.on_message(filters.private & filters.command('help'))
