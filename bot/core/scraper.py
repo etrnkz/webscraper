@@ -6,7 +6,7 @@ import asyncio
 import re
 import requests
 from bs4 import BeautifulSoup
-from pyrogram import Client, filters
+from hydrogram import Client, filters
 import logging
 import shutil
 from urllib.parse import urlparse
@@ -23,7 +23,7 @@ from bot import database as db
 from bot.plugins.force_subscribe import ForceSubscribe
 from bot.modules.web_archiver import DownloadManager
 from bot.modules.zip_packager import create_zip, get_dir_size, format_size
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from concurrent.futures import ThreadPoolExecutor
 
 config.validate_config()

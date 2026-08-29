@@ -1,5 +1,5 @@
 # Core dependencies
-pyrogram==2.0.106
+hydrogram==0.2.0
 TgCrypto==1.2.5
 
 # Web scraping

@@ -1,7 +1,7 @@
 """Force channel subscription functionality"""
 import logging
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import UserNotParticipant
+from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram.errors import UserNotParticipant
 
 logger = logging.getLogger(__name__)
 
