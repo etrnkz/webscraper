@@ -38,6 +38,8 @@ wheels/
 # Pyrogram session files
 *.session
 *.session-journal
+*.session-shm
+*.session-wal
 
 # Database files
 *.db
