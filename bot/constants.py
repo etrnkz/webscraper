@@ -3,20 +3,10 @@
 BOT_VERSION = "3.0.0"
 BOT_NAME = "Web Cloner Bot"
 
-WELCOME_MESSAGE = """Welcome {name}! <tg-emoji emoji-id="5206456392407341290">🕸</tg-emoji>
-
-I clone entire websites into offline ZIP files <tg-emoji emoji-id="5206456392407341290">🕸</tg-emoji>
-
-<b>Features</b>
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Full JS rendering with Chromium
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Auto-downloads videos (YouTube, TikTok, etc.)
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Captures lazy-loaded content
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Cookie auth for login-protected sites
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Smart page prioritization
-<tg-emoji emoji-id="5319156402973849743">⭐️</tg-emoji> Offline link rewriting
-
-Send /help for full details.
-"""
+# NOTE: The welcome message is built at runtime by
+# bot.utils.premium_text.PremiumText in the /start handler so that premium
+# emojis render as real CUSTOM_EMOJI entities. Do not reintroduce a static
+# HTML/<tg-emoji> variant here — those render literally over MTProto.
 
 HELP_MESSAGE = """**Web Cloner Bot**
 

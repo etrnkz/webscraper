@@ -1,18 +1,16 @@
 # Core dependencies
 hydrogram==0.2.0
 TgCrypto==1.2.5
+python-dotenv==1.2.2
 
 # Web scraping
-requests==2.28.1
-beautifulsoup4==4.11.1
-lxml==4.9.1
-chardet==5.0.0
+requests==2.34.2
+beautifulsoup4==4.14.3
 
 # Async HTTP + browser rendering
 playwright==1.62.0
 httpx==0.28.1
 aiohttp==3.14.3
 
-# Web server (optional)
-Flask==2.2.2
-gunicorn==20.1.0
+# Video downloads (optional at runtime; skipped if absent)
+yt-dlp==2026.8.19
