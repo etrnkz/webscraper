@@ -7,22 +7,52 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Must set up event loop BEFORE importing Pyrogram (it calls get_event_loop at import time)
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
 sys.path.insert(0, os.path.dirname(__file__))
 
-from bot.core.scraper import bot, logger, constants
+# Import after path setup
+from bot.core.scraper import bot, logger, constants, crawl_queue, telegram_notifier, start_background_tasks, cancel_all_crawl_tasks, _notify_restarted_users
 
-if __name__ == "__main__":
+
+async def _main():
+    """Main async entry point with explicit lifecycle."""
     logger.info(f"Starting {constants.BOT_NAME} v{constants.BOT_VERSION}")
     logger.info("=" * 50)
 
+    # Start the bot client
+    await bot.start()
+
+    # Start background tasks
+    global _background_tasks
+    _background_tasks = start_background_tasks()
+
+    # Notify users who were waiting on restart
+    await _notify_restarted_users()
+
     try:
-        bot.run()
+        # Run until idle
+        from hydrogram import idle
+        await idle()
+    finally:
+        logger.info("Shutting down...")
+
+        # Cancel and await background tasks
+        for task in _background_tasks:
+            task.cancel()
+        if _background_tasks:
+            await asyncio.gather(*_background_tasks, return_exceptions=True)
+
+        # Cancel and await all crawl tasks
+        await cancel_all_crawl_tasks()
+
+        # Stop the bot
+        await bot.stop()
+
+        logger.info("Shutdown complete")
+
+
+if __name__ == "__main__":
+    try:
+        bot.run(_main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:

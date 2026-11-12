@@ -1,6 +1,5 @@
 """SQLite-backed persistent storage for user data at scale"""
 import sqlite3
-import json
 import threading
 import logging
 from datetime import datetime
@@ -18,7 +17,15 @@ def get_conn():
         _local.conn.row_factory = sqlite3.Row
         _local.conn.execute("PRAGMA journal_mode=WAL")
         _local.conn.execute("PRAGMA synchronous=NORMAL")
+        _local.conn.execute("PRAGMA busy_timeout = 5000")
     return _local.conn
+
+
+def close_conn():
+    """Close the thread-local connection. For use by dedicated executor threads."""
+    if hasattr(_local, 'conn') and _local.conn is not None:
+        _local.conn.close()
+        _local.conn = None
 
 
 def init_db():
@@ -78,20 +85,31 @@ def get_user(user_id):
 
 
 def increment_requests(user_id, success=True):
+    """Record a request (clone or media). Does NOT charge usage_count.
+
+    Usage is charged ONLY by increment_usage() at successful browser launch.
+    """
     conn = get_conn()
     now = datetime.now().isoformat()
-    if success:
-        conn.execute("UPDATE users SET total_requests = total_requests + 1, usage_count = usage_count + 1 WHERE user_id=?", (user_id,))
-    else:
-        conn.execute("UPDATE users SET total_requests = total_requests + 1, total_errors = total_errors + 1 WHERE user_id=?", (user_id,))
-    conn.execute("INSERT INTO request_stats (user_id, timestamp) VALUES (?, ?)", (user_id, now))
-    conn.commit()
+    try:
+        if success:
+            conn.execute("UPDATE users SET total_requests = total_requests + 1 WHERE user_id=?", (user_id,))
+        else:
+            conn.execute("UPDATE users SET total_requests = total_requests + 1, total_errors = total_errors + 1 WHERE user_id=?", (user_id,))
+        conn.execute("INSERT INTO request_stats (user_id, timestamp) VALUES (?, ?)", (user_id, now))
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.warning("increment_requests failed: %s", e)
+        # Don't raise - the request path must not fail on DB errors
 
 
 def record_block(user_id):
     conn = get_conn()
-    conn.execute("UPDATE users SET blocked_count = blocked_count + 1 WHERE user_id=?", (user_id,))
-    conn.commit()
+    try:
+        conn.execute("UPDATE users SET blocked_count = blocked_count + 1 WHERE user_id=?", (user_id,))
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.warning("record_block failed: %s", e)
 
 
 def ban_user(user_id):
@@ -146,11 +164,14 @@ def get_statistics():
 
 def log_activity(user_id, action, details=None, success=True):
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO activity_log (user_id, action, details, timestamp, success) VALUES (?,?,?,?,?)",
-        (user_id, action, details, datetime.now().isoformat(), int(success))
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            "INSERT INTO activity_log (user_id, action, details, timestamp, success) VALUES (?,?,?,?,?)",
+            (user_id, action, details, datetime.now().isoformat(), int(success))
+        )
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.warning("log_activity failed: %s", e)
 
 
 def get_recent_activities(limit=50):
@@ -169,24 +190,75 @@ def get_user_activities(user_id, limit=20):
 
 
 def cleanup_old_data():
-    """Remove stats older than 7 days to keep DB small"""
+    """Remove stats older than 7 days to keep DB small.
+
+    Uses batched deletes with commits between batches to avoid long
+    write transactions that block other writers under WAL.
+    """
     conn = get_conn()
-    cutoff = (datetime.now().timestamp() - 7 * 86400)
-    conn.execute("DELETE FROM request_stats WHERE timestamp < ?", (cutoff,))
-    conn.execute("DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT 10000)")
-    conn.commit()
+    cutoff = datetime.now().isoformat(timespec="microseconds")
+
+    # Batched delete for request_stats (ISO string comparison)
+    # SQLite doesn't support LIMIT in DELETE, use subquery
+    batch_size = 5000
+    while True:
+        try:
+            cursor = conn.execute("""
+                DELETE FROM request_stats
+                WHERE rowid IN (
+                    SELECT rowid FROM request_stats
+                    WHERE timestamp < ?
+                    LIMIT ?
+                )
+            """, (cutoff, batch_size))
+            deleted = cursor.rowcount
+            conn.commit()
+            if deleted < batch_size:
+                break
+        except sqlite3.OperationalError as e:
+            logger.warning("cleanup_old_data request_stats failed: %s", e)
+            break
+
+    # Batched delete for activity_log (keep last 10000)
+    while True:
+        try:
+            cursor = conn.execute("""
+                DELETE FROM activity_log
+                WHERE rowid IN (
+                    SELECT rowid FROM activity_log
+                    WHERE id NOT IN (
+                        SELECT id FROM activity_log ORDER BY id DESC LIMIT 10000
+                    )
+                    LIMIT ?
+                )
+            """, (batch_size,))
+            deleted = cursor.rowcount
+            conn.commit()
+            if deleted < batch_size:
+                break
+        except sqlite3.OperationalError as e:
+            logger.warning("cleanup_old_data activity_log failed: %s", e)
+            break
 
 
 def get_usage_count(user_id):
     conn = get_conn()
-    row = conn.execute("SELECT usage_count FROM users WHERE user_id=?", (user_id,)).fetchone()
-    return row['usage_count'] if row else 0
+    try:
+        row = conn.execute("SELECT usage_count FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return row['usage_count'] if row else 0
+    except sqlite3.OperationalError as e:
+        logger.warning("get_usage_count failed: %s", e)
+        return 0
 
 
 def increment_usage(user_id):
+    """Charge one unit of usage quota. Sole writer of usage_count."""
     conn = get_conn()
-    conn.execute("UPDATE users SET usage_count = usage_count + 1 WHERE user_id=?", (user_id,))
-    conn.commit()
+    try:
+        conn.execute("UPDATE users SET usage_count = usage_count + 1 WHERE user_id=?", (user_id,))
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.warning("increment_usage failed: %s", e)
 
 
 init_db()

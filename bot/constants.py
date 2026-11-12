@@ -48,3 +48,67 @@ Size: {size}
 
 Your ZIP is below.
 """
+
+# Queue / admission control messages
+QUEUE_WAITING = """**Queued — {position} in line**
+
+Estimated wait: ~{wait_min} min
+
+The server is busy. Your clone will start when resources are available.
+
+[Cancel]
+"""
+
+QUEUE_FULL = """**Server at capacity**
+
+Too many users are waiting. Please try again later.
+
+Your usage was **not** charged.
+"""
+
+SERVER_BUSY_RETRY = """**Server busy — retrying**
+
+Chromium could not launch (resource pressure). Retrying in {delay}s…
+
+Attempt {attempt} of {max_attempts}.
+"""
+
+DEFERRED = """**Server busy — waiting for resources**
+
+Capacity dropped before launch. Re-queued at your position.
+"""
+
+CANCELLED_QUEUED = """**Clone cancelled**
+
+Your request was removed from the queue. No browser was launched.
+
+Usage was **not** charged.
+"""
+
+CANCELLED_RUNNING = """**Clone cancelled**
+
+The crawl was stopped and temporary files were cleaned up.
+
+Usage **was** charged (browser had launched).
+"""
+
+TOO_LATE_TO_CANCEL = """**Cannot cancel**
+
+The archive is already being uploaded. Deleting it mid-transfer
+would corrupt the file.
+
+Your clone is on its way!
+"""
+
+RESTART_NOTICE = """**Server restarted**
+
+The server restarted while your clone was queued.
+Please send the URL again.
+"""
+
+EXPIRED = """**Queue wait expired**
+
+Your request waited too long and was removed from the queue.
+
+Usage was **not** charged. Please try again.
+"""

@@ -23,7 +23,7 @@ def validate_config():
         print("Please set them in your .env file or environment.")
         sys.exit(1)
 
-# Rate limiting
+# Rate limiting (legacy, unused)
 RATE_LIMIT = 5  # requests per minute
 DAILY_LIMIT = 15  # requests per day
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
@@ -72,11 +72,33 @@ FREE_USAGE_LIMIT = 3
 # Crawl settings
 CRAWL_MAX_PAGES = int(os.getenv('CRAWL_MAX_PAGES', '200'))
 CRAWL_MAX_DEPTH = int(os.getenv('CRAWL_MAX_DEPTH', '10'))
-CRAWL_CONCURRENCY = int(os.getenv('CRAWL_CONCURRENCY', '15'))
+CRAWL_CONCURRENCY = int(os.getenv('CRAWL_CONCURRENCY', '0'))  # 0 = derive from CPU quota
 CRAWL_PAGE_TIMEOUT = int(os.getenv('CRAWL_PAGE_TIMEOUT', '30000'))  # ms
 CRAWL_ASSET_TIMEOUT = int(os.getenv('CRAWL_ASSET_TIMEOUT', '15000'))  # ms
 CRAWL_MAX_ZIP_SIZE = 2 * 1024 * 1024 * 1024  # 2GB ZIP limit
 CRAWL_TIMEOUT_SECONDS = int(os.getenv('CRAWL_TIMEOUT_SECONDS', '300'))  # 5 min hard cap
+
+# Queue / admission control settings
+CRAWL_MAX_CONCURRENT = int(os.getenv('CRAWL_MAX_CONCURRENT', '4'))  # hard ceiling on concurrent crawls
+CRAWL_MEMORY_BUDGET_MB = int(os.getenv('CRAWL_MEMORY_BUDGET_MB', '1000'))  # RAM assumed per crawl
+CRAWL_MEMORY_RESERVE_MB = int(os.getenv('CRAWL_MEMORY_RESERVE_MB', '1024'))  # RAM held back for sibling apps
+CRAWL_MAX_QUEUE_SIZE = int(os.getenv('CRAWL_MAX_QUEUE_SIZE', '100'))  # max waiting users
+CRAWL_MAX_QUEUE_AGE_MINUTES = int(os.getenv('CRAWL_MAX_QUEUE_AGE_MINUTES', '45'))  # max queue wait time
+CRAWL_BROWSER_RETRY_LIMIT = int(os.getenv('CRAWL_BROWSER_RETRY_LIMIT', '2'))  # total launch attempts
+CRAWL_BROWSER_RETRY_BASE_SECONDS = int(os.getenv('CRAWL_BROWSER_RETRY_BASE_SECONDS', '5'))  # backoff base
+CRAWL_LAUNCH_FAILURE_THRESHOLD = int(os.getenv('CRAWL_LAUNCH_FAILURE_THRESHOLD', '3'))  # consecutive failures to trip breaker
+CRAWL_LAUNCH_SUSPEND_SECONDS = int(os.getenv('CRAWL_LAUNCH_SUSPEND_SECONDS', '30'))  # suspension duration
+CRAWL_RESOURCE_PROBE_INTERVAL = int(os.getenv('CRAWL_RESOURCE_PROBE_INTERVAL', '2'))  # memory probe interval (seconds)
+CRAWL_CPU_PROBE_INTERVAL = int(os.getenv('CRAWL_CPU_PROBE_INTERVAL', '15'))  # CPU probe interval (seconds)
+CRAWL_POSITION_REFRESH_SECONDS = int(os.getenv('CRAWL_POSITION_REFRESH_SECONDS', '120'))  # fast refresh cadence
+CRAWL_POSITION_REFRESH_SECONDS_LONG = int(os.getenv('CRAWL_POSITION_REFRESH_SECONDS_LONG', '600'))  # slow refresh cadence
+CRAWL_POSITION_REFRESH_TOP_N = int(os.getenv('CRAWL_POSITION_REFRESH_TOP_N', '20'))  # how many get fast cadence
+CRAWL_ESTIMATE_MINUTES_PER_CRAWL = int(os.getenv('CRAWL_ESTIMATE_MINUTES_PER_CRAWL', '2'))  # fallback per-crawl duration
+CRAWL_ORPHAN_MAX_AGE_MINUTES = int(os.getenv('CRAWL_ORPHAN_MAX_AGE_MINUTES', '60'))  # age for orphan sweep
+CRAWL_ASSET_CONCURRENCY = int(os.getenv('CRAWL_ASSET_CONCURRENCY', '4'))  # concurrent asset fetches
+CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', '900'))  # maintenance interval
+CRAWL_FORCE_LAUNCH_FAILURE = int(os.getenv('CRAWL_FORCE_LAUNCH_FAILURE', '0'))  # fault injection: first N launches fail
+CRAWL_FORCE_LAUNCH_FAILURE_KIND = os.getenv('CRAWL_FORCE_LAUNCH_FAILURE_KIND', 'resource_pressure')  # kind of injected failure
 
 # Logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()

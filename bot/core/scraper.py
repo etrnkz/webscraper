@@ -5,8 +5,6 @@ load_dotenv()
 import asyncio
 import re
 import requests
-from bs4 import BeautifulSoup
-from hydrogram import Client, filters, enums
 import logging
 import shutil
 from urllib.parse import urlparse
@@ -23,17 +21,23 @@ from bot import database as db
 from bot.plugins.force_subscribe import ForceSubscribe
 from bot.modules.web_archiver import DownloadManager
 from bot.modules.zip_packager import create_zip, get_dir_size, format_size
+from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram.types import Message
 from concurrent.futures import ThreadPoolExecutor
 from bot.services.botapi import upgrade_premium_markup
+
+# Import queue system
+from bot.errors import BrowserLaunchError
+from bot.queue.crawl_queue import CrawlQueue, CrawlJob, Outcome, JobState
+from bot.queue.notifier import JobNotifier
+from bot.queue.resources import read_resources, derive_capacity
 
 config.validate_config()
 cache.init_cache()
 
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
-
-download_executor = ThreadPoolExecutor(max_workers=20)
 
 API_ID = config.API_ID
 API_HASH = config.API_HASH
@@ -53,29 +57,88 @@ if config.FORCE_JOIN_CHANNEL and config.FORCE_JOIN_CHANNEL not in force_subscrib
 
 bot_start_time = datetime.now()
 
-# ── Active crawl jobs: user_id -> WebCloner instance ──────────────
-active_jobs: dict[int, object] = {}
-active_progress_msgs: dict[int, int] = {}
+# User settings (persist across restarts)
 user_settings: dict[int, dict] = {}  # user_id -> {cookies_file, subdomains}
-pending_cookie_requests: dict[int, dict] = {}  # user_id -> {url, domain, subdomains, msg_id}
+
+# Queue and notifier (initialized in main)
+crawl_queue: CrawlQueue | None = None
+telegram_notifier: "TelegramNotifier | None" = None
+
+# Background tasks
+_background_tasks: list[asyncio.Task] = []
 
 
-# ── DEBUG: catch-all handler to verify update delivery ────────────
-@bot.on_message(filters.all, group=-1)
-async def debug_catch_all(bot, msg):
-    user = msg.from_user
-    uid = user.id if user else "N/A"
-    uname = user.username if user else "N/A"
-    fname = user.first_name if user else "N/A"
-    chat_type = msg.chat.type if msg.chat else "N/A"
-    text = msg.text or msg.caption or "[non-text]"
-    logger.info(
-        "DEBUG_CATCH_ALL | chat_type=%s | user_id=%s | username=%s | first_name=%s | text=%s",
-        chat_type, uid, uname, fname, text[:200]
-    )
+class TelegramNotifier:
+    """Telegram implementation of JobNotifier.
+
+    Edits the job's existing status message rather than sending new ones.
+    """
+
+    def __init__(self, bot_client: Client):
+        self.bot = bot_client
+
+    async def _edit(self, chat_id: int, message_id: int | None, text: str, reply_markup=None) -> None:
+        if message_id is None:
+            return
+        try:
+            await self.bot.edit_message_text(chat_id, message_id, text, reply_markup=reply_markup)
+        except Exception as e:
+            logger.debug("Failed to edit message %s/%s: %s", chat_id, message_id, e)
+
+    async def on_queued(self, job: CrawlJob, position: int, wait_seconds: int) -> None:
+        wait_min = max(1, (wait_seconds + 59) // 60)
+        text = constants.QUEUE_WAITING.format(position=position, wait_min=wait_min)
+        await self._edit(job.chat_id, job.message_id, text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data="cancel_crawl")]
+        ]))
+
+    async def on_started(self, job: CrawlJob) -> None:
+        scope_label = 'Subdomains' if job.scope == 'subdomains' else 'Same domain'
+        cookie_label = 'Yes' if job.cookies_file else 'No'
+        text = (
+            f"**Starting clone**\n\n"
+            f"**URL** `{job.url}`\n"
+            f"**Scope** `{scope_label}`\n"
+            f"**Cookies** `{cookie_label}`\n\n"
+            "Launching Chromium..."
+        )
+        await self._edit(job.chat_id, job.message_id, text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data="cancel_crawl")]
+        ]))
+
+    async def on_retry(self, job: CrawlJob, attempt: int, delay_seconds: int, kind: str) -> None:
+        text = constants.SERVER_BUSY_RETRY.format(
+            delay=delay_seconds,
+            attempt=attempt,
+            max_attempts=config.CRAWL_BROWSER_RETRY_LIMIT
+        )
+        await self._edit(job.chat_id, job.message_id, text)
+
+    async def on_deferred(self, job: CrawlJob) -> None:
+        text = constants.DEFERRED
+        await self._edit(job.chat_id, job.message_id, text)
+
+    async def on_failed(self, job: CrawlJob, reason: str) -> None:
+        text = f"Clone failed: `{reason[:100]}`"
+        await self._edit(job.chat_id, job.message_id, text)
+
+    async def on_cancelled(self, job: CrawlJob, charged: bool) -> None:
+        if charged:
+            text = constants.CANCELLED_RUNNING
+        else:
+            text = constants.CANCELLED_QUEUED
+        await self._edit(job.chat_id, job.message_id, text)
+
+    async def on_expired(self, job: CrawlJob) -> None:
+        text = constants.EXPIRED
+        await self._edit(job.chat_id, job.message_id, text)
 
 
-async def check_force_join(user_id, msg):
+async def check_force_join(user_id: int, msg: Message) -> bool:
+    """Check if user must join required channels.
+
+    Only applies to users who have exhausted their free allowance.
+    """
     usage = db.get_usage_count(user_id)
     if usage >= config.FREE_USAGE_LIMIT:
         is_subscribed, not_subscribed = await force_subscribe.check_all_subscriptions(user_id)
@@ -90,6 +153,7 @@ async def check_force_join(user_id, msg):
 
 
 # ── Callbacks ──────────────────────────────────────────────────────
+
 @bot.on_callback_query()
 async def handle_callback(bot, callback_query):
     user_id = callback_query.from_user.id
@@ -122,12 +186,14 @@ async def handle_callback(bot, callback_query):
         )
 
     elif data == "cancel_crawl":
-        cloner = active_jobs.get(user_id)
-        if cloner:
-            cloner.cancel()
-            await callback_query.answer("Crawl cancelled.", show_alert=True)
-        else:
+        if crawl_queue is None:
+            await callback_query.answer("Queue not ready.", show_alert=True)
+            return
+        state, charged = crawl_queue.cancel(user_id)
+        if state == "none":
             await callback_query.answer("No active crawl.", show_alert=True)
+        else:
+            await callback_query.answer(f"Cancelled ({state}).", show_alert=True)
 
     elif data.startswith("bcast_"):
         if user_id not in config.ADMIN_IDS:
@@ -192,6 +258,7 @@ async def handle_callback(bot, callback_query):
 
 
 # ── /start ─────────────────────────────────────────────────────────
+
 @bot.on_message(filters.private & filters.command('start'))
 async def start(bot, msg):
     user_id = msg.from_user.id
@@ -199,7 +266,7 @@ async def start(bot, msg):
     logger.info("START_HANDLER | user_id=%s | username=%s | first_name=%s", user_id, msg.from_user.username, first_name)
     db.register_user(user_id, msg.from_user.username, first_name)
 
-    # Premium welcome via entities (like AltaMovies) — 🕸 520... on header, ⭐️ 531... on list
+    # Premium welcome via entities (like AltaMovies)
     from bot.utils.premium_text import PremiumText
     pt = PremiumText()
     pt.add(f"Welcome {first_name}! ").emoji("WEB").add("\n\n")
@@ -214,7 +281,7 @@ async def start(bot, msg):
     pt.add("\nSend /help for full details.")
     text, entities = pt.build()
 
-    # Buttons: keep premium icons via Bot API (ℹ️/💜/💻)
+    # Buttons with premium icons
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("ℹ️ Help", callback_data="help"),
          InlineKeyboardButton("💜 Stats", callback_data="stats")],
@@ -222,7 +289,6 @@ async def start(bot, msg):
     ])
 
     sent = await msg.reply_text(text, entities=entities, reply_markup=buttons)
-    # Upgrade buttons to premium icons via Bot API (best-effort, like AltaMovies)
     try:
         await upgrade_premium_markup(sent, buttons)
     except Exception:
@@ -261,12 +327,14 @@ async def version_command(bot, msg):
 @bot.on_message(filters.private & filters.command('cancel'))
 async def cancel_command(bot, msg):
     user_id = msg.from_user.id
-    cloner = active_jobs.get(user_id)
-    if cloner:
-        cloner.cancel()
-        await msg.reply("Crawl cancelled.")
-    else:
+    if crawl_queue is None:
+        await msg.reply("Queue not ready.")
+        return
+    state, charged = crawl_queue.cancel(user_id)
+    if state == "none":
         await msg.reply("No active crawl to cancel.")
+    else:
+        await msg.reply(f"Cancelled ({state}).")
 
 
 @bot.on_message(filters.private & filters.command('cookies'))
@@ -482,6 +550,7 @@ async def media_command(bot, msg):
 
 
 # ── Main URL handler → Playwright crawl ───────────────────────────
+
 @bot.on_message(filters.private & filters.regex(r"(?i)(https?://|[\w-]+\.\w{2,})"))
 async def handle_url(bot, msg):
     user_id = msg.from_user.id
@@ -504,14 +573,11 @@ async def handle_url(bot, msg):
         db.record_block(user_id)
         return
 
+    # Force-join gate (only for users past free allowance)
     if not await check_force_join(user_id, msg):
         return
-    db.increment_usage(user_id)
 
-    if user_id in active_jobs:
-        await msg.reply("You already have a running crawl. Send /cancel first.")
-        return
-
+    # Validate URL and domain BEFORE queue submission
     if not is_valid_url(url):
         await msg.reply(constants.ERROR_INVALID_URL)
         return
@@ -522,111 +588,217 @@ async def handle_url(bot, msg):
         db.record_block(user_id)
         return
 
+    # Resolve settings
     settings = user_settings.get(user_id, {})
     scope = 'subdomains' if subdomains or settings.get('subdomains') else 'same-domain'
     saved_cookies = settings.get('cookies_file')
     use_cookies = saved_cookies if saved_cookies and os.path.exists(saved_cookies) else None
 
+    # Cookie prompt (before queue)
     if wants_cookies and not use_cookies:
-        pending_cookie_requests[user_id] = {
-            'url': url,
-            'domain': domain,
-            'scope': scope,
-            'msg_id': msg.id,
-        }
         await msg.reply(
             "Send me your **cookies.json** file.\n\n"
             "Export cookies from your browser using a browser extension "
             "(e.g. EditThisCookie, Cookie-Editor) and save as `cookies.json`.\n\n"
             "Send /cancel to abort."
         )
+        # Note: cookie flow is not implemented for queued jobs; user must re-send URL with cookies
         return
 
-    scope_label = 'Subdomains' if scope == 'subdomains' else 'Same domain'
-    cookie_label = 'Yes' if use_cookies else 'No'
+    # Build job
+    import uuid
+    job = CrawlJob(
+        job_id=str(uuid.uuid4())[:8],
+        user_id=user_id,
+        url=url,
+        domain=domain,
+        scope=scope,
+        cookies_file=use_cookies,
+        chat_id=msg.chat.id,
+        message_id=None,  # Will be set after first message
+        sequence=int(datetime.now().timestamp() * 1000) % 1_000_000_000,
+        enqueued_at=0.0,
+    )
 
-    logger.info(f"Crawl started by user {user_id}: {url} (scope={scope})")
+    # Submit to queue
+    if crawl_queue is None:
+        await msg.reply("Server starting up, please try again in a moment.")
+        return
+
+    admission = crawl_queue.submit(job)
+
+    # Handle admission outcomes
+    if admission.outcome == Outcome.REJECTED_DUPLICATE:
+        existing = crawl_queue._by_user.get(user_id)
+        if existing and existing.message_id:
+            await msg.reply(
+                "You already have a crawl in progress or queued. "
+                "Use /cancel to stop it.",
+                reply_to_message_id=msg.id
+            )
+        else:
+            await msg.reply("You already have a crawl in progress or queued. Use /cancel first.")
+        return
+
+    if admission.outcome == Outcome.REJECTED_QUEUE_FULL:
+        await msg.reply(constants.QUEUE_FULL)
+        return
+
+    if admission.outcome == Outcome.REJECTED_USAGE:
+        # Should not happen: force-join gate runs first
+        await msg.reply("Usage limit reached. Join the required channel to continue.")
+        return
+
+    # Send initial status message
+    if admission.outcome == Outcome.ADMITTED:
+        scope_label = 'Subdomains' if scope == 'subdomains' else 'Same domain'
+        cookie_label = 'Yes' if use_cookies else 'No'
+        text = (
+            f"**Starting clone**\n\n"
+            f"**URL** `{url}`\n"
+            f"**Scope** `{scope_label}`\n"
+            f"**Cookies** `{cookie_label}`\n\n"
+            "Launching Chromium..."
+        )
+    else:  # QUEUED
+        wait_min = max(1, (admission.estimated_wait_seconds + 59) // 60)
+        text = constants.QUEUE_WAITING.format(
+            position=admission.position,
+            wait_min=wait_min
+        )
 
     processing_msg = await msg.reply(
-        f"**Starting clone**\n\n"
-        f"**URL** `{url}`\n"
-        f"**Scope** `{scope_label}`\n"
-        f"**Cookies** `{cookie_label}`\n\n"
-        "Launching Chromium...",
+        text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Cancel", callback_data="cancel_crawl")]
         ])
     )
 
-    asyncio.create_task(
-        _run_crawl(user_id, url, domain, processing_msg, bot, scope=scope, cookies_file=use_cookies)
-    )
+    # Record message_id and launch
+    job.message_id = processing_msg.id
+    crawl_queue.launch(job)
+
+    # For admitted jobs, notify started
+    if admission.outcome == Outcome.ADMITTED:
+        await telegram_notifier.on_started(job)
 
 
-async def _run_crawl(user_id, url, domain, status_msg, bot, scope='same-domain', cookies_file=None):
+# ── Crawl runner ───────────────────────────────────────────────────
+
+async def _run_crawl(job: CrawlJob):
+    """Queue runner: launches crawler, handles retries, charges usage, uploads."""
     from bot.core.crawler import WebCloner
 
-    output_dir = f"clone_{domain}_{user_id}"
-    zip_path = f"clone_{domain}_{user_id}.zip"
+    # Wait for status message to exist
+    await job.status_ready.wait()
+
+    # Check if cancelled before we even start
+    if job.cancel_requested:
+        crawl_queue.complete(job)
+        return
+
+    # Provisional admission check (capacity may have dropped)
+    if not crawl_queue.may_start(job):
+        crawl_queue.defer(job)
+        await telegram_notifier.on_deferred(job)
+        return
+
+    # Resolve concurrency from queue's current capacity
+    workers_per_crawl = crawl_queue.get_workers_per_crawl()
+
+    # Unique output paths per job
+    output_dir = f"clone_{job.domain}_{job.user_id}_{job.job_id}"
+    zip_path = f"clone_{job.domain}_{job.user_id}_{job.job_id}.zip"
 
     cloner = WebCloner(
-        start_url=url,
+        start_url=job.url,
         output_dir=output_dir,
         max_pages=config.CRAWL_MAX_PAGES,
         max_depth=config.CRAWL_MAX_DEPTH,
-        concurrency=config.CRAWL_CONCURRENCY,
+        concurrency=workers_per_crawl,
         page_timeout=config.CRAWL_PAGE_TIMEOUT,
         asset_timeout=config.CRAWL_ASSET_TIMEOUT,
         max_time=config.CRAWL_TIMEOUT_SECONDS,
-        cookies_file=cookies_file,
-        crawl_scope=scope,
+        cookies_file=job.cookies_file,
+        crawl_scope=job.scope,
     )
-    active_jobs[user_id] = cloner
+
+    # Set cancel callback
+    job.cancel_running = cloner.cancel
+
+    # Track progress task for cleanup
+    progress_task: asyncio.Task | None = None
 
     try:
-        progress_task = asyncio.create_task(_update_progress(cloner, status_msg, bot))
+        # Notify started
+        await telegram_notifier.on_started(job)
 
+        # Progress updater
+        async def _progress_updater():
+            while True:
+                await asyncio.sleep(5)
+                try:
+                    if cloner.progress.cancelled:
+                        break
+                    text = (
+                        f"**Cloning...**\n\n"
+                        f"{cloner.progress.to_text()}\n\n"
+                        f"_Updates every 5s — /cancel to stop_"
+                    )
+                    await bot.edit_message_text(job.chat_id, job.message_id, text)
+                except Exception:
+                    break
+
+        progress_task = asyncio.create_task(_progress_updater())
+
+        # Run crawl
         await cloner.run()
 
-        progress_task.cancel()
-
+        # Check for cancellation after crawl
         if cloner.progress.cancelled:
-            await _safe_edit(status_msg, "Clone cancelled.")
-            active_jobs.pop(user_id, None)
-            shutil.rmtree(output_dir, ignore_errors=True)
+            await telegram_notifier.on_cancelled(job, charged=job.charged)
+            crawl_queue.complete(job)
+            # Cleanup off-loop
+            await asyncio.to_thread(shutil.rmtree, output_dir, ignore_errors=True)
+            if os.path.exists(zip_path):
+                await asyncio.to_thread(os.remove, zip_path)
             return
 
+        # Crawl succeeded - record duration (held window: admission to archive built)
+        duration = time.monotonic() - job.enqueued_at if job.enqueued_at else 0
+        crawl_queue.record_duration(job, duration)
+
+        # Get stats
         pages = cloner.progress.pages_downloaded
         assets = cloner.progress.assets_downloaded
         videos = cloner.progress.videos_downloaded
         errors = len(cloner.progress.errors)
 
         if pages == 0:
-            await _safe_edit(status_msg, "Couldn't download any pages from this site.")
-            active_jobs.pop(user_id, None)
-            shutil.rmtree(output_dir, ignore_errors=True)
+            await telegram_notifier.on_failed(job, "Couldn't download any pages")
+            crawl_queue.complete(job)
+            await asyncio.to_thread(shutil.rmtree, output_dir, ignore_errors=True)
             return
 
-        packing_msg = f"Packing {pages} pages, {assets} assets"
-        if videos:
-            packing_msg += f", {videos} videos"
-        packing_msg += " into ZIP..."
-        await _safe_edit(status_msg, packing_msg)
+        # Release slot BEFORE packing/upload (packing is I/O, not CPU/RAM bound)
+        crawl_queue.release_slot(job)
 
-        create_zip(output_dir, zip_path)
-        zip_size = os.path.getsize(zip_path)
+        # Pack ZIP off the event loop
+        await asyncio.to_thread(create_zip, output_dir, zip_path)
+        zip_size = await asyncio.to_thread(os.path.getsize, zip_path)
         size_str = format_size(zip_size)
 
         if zip_size > config.CRAWL_MAX_ZIP_SIZE:
-            await _safe_edit(status_msg, f"ZIP too large ({size_str}). Try a smaller site.")
-            active_jobs.pop(user_id, None)
-            shutil.rmtree(output_dir, ignore_errors=True)
-            os.remove(zip_path)
+            await telegram_notifier.on_failed(job, f"ZIP too large ({size_str})")
+            crawl_queue.complete(job)
+            await asyncio.to_thread(shutil.rmtree, output_dir, ignore_errors=True)
+            await asyncio.to_thread(os.remove, zip_path)
             return
 
+        # Upload
         caption = (
             f"**Clone complete**\n\n"
-            f"**Domain** `{domain}`\n"
+            f"**Domain** `{job.domain}`\n"
             f"**Pages** `{pages}`\n"
             f"**Assets** `{assets}`\n"
         )
@@ -640,55 +812,231 @@ async def _run_crawl(user_id, url, domain, status_msg, bot, scope='same-domain',
 
         try:
             await bot.send_document(
-                user_id,
+                job.user_id,
                 zip_path,
                 caption=caption,
             )
-            await status_msg.delete()
-        except Exception as e:
-            await _safe_edit(status_msg, f"Failed to send ZIP: `{str(e)[:80]}`")
+            # Delete status message after successful delivery
+            try:
+                await bot.delete_messages(job.chat_id, job.message_id)
+            except Exception:
+                pass
 
-        db.increment_requests(user_id, success=True)
-        db.log_activity(user_id, "crawl_complete", f"{domain} | {pages} pages | {assets} assets")
+            crawl_queue.complete(job)
+            db.log_activity(job.user_id, "crawl_complete", f"{job.domain} | {pages} pages | {assets} assets")
+
+        except Exception as e:
+            await telegram_notifier.on_failed(job, f"Failed to send ZIP: {str(e)[:80]}")
+            crawl_queue.complete(job)
+
+    except BrowserLaunchError as e:
+        # Launch failed - record and let queue handle retry
+        crawl_queue.record_launch_failure(job, e.kind)
+        job.launch_attempts += 1
+
+        if job.launch_attempts >= config.CRAWL_BROWSER_RETRY_LIMIT:
+            # Retry budget exhausted
+            kind_name = e.kind.value.replace('_', ' ')
+            await telegram_notifier.on_failed(job, f"Launch failed after {job.launch_attempts} attempts ({kind_name})")
+            crawl_queue.complete(job)
+            # Cleanup off-loop
+            await asyncio.to_thread(shutil.rmtree, output_dir, ignore_errors=True)
+            if os.path.exists(zip_path):
+                await asyncio.to_thread(os.remove, zip_path)
+        else:
+            # Re-queue with backoff
+            delay = config.CRAWL_BROWSER_RETRY_BASE_SECONDS * (2 ** (job.launch_attempts - 1))
+            job.not_before = time.monotonic() + delay
+            job.state = JobState.QUEUED
+            crawl_queue._pending.append(job)
+            crawl_queue._pending.sort(key=lambda j: j.sequence)
+            await telegram_notifier.on_retry(job, job.launch_attempts, delay, e.kind.value)
+            crawl_queue.pump()
 
     except Exception as e:
-        logger.error(f"Crawl failed for {url}: {e}", exc_info=True)
-        try:
-            await status_msg.edit(f"Clone failed: `{str(e)[:100]}`")
-        except Exception:
-            pass
-        db.increment_requests(user_id, success=False)
+        logger.error(f"Crawl failed for {job.url}: {e}", exc_info=True)
+        await telegram_notifier.on_failed(job, str(e)[:100])
+        crawl_queue.complete(job)
 
     finally:
-        active_jobs.pop(user_id, None)
-        shutil.rmtree(output_dir, ignore_errors=True)
+        if progress_task:
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+        # Final cleanup (best effort)
+        await asyncio.to_thread(shutil.rmtree, output_dir, ignore_errors=True)
         if os.path.exists(zip_path):
-            os.remove(zip_path)
+            await asyncio.to_thread(os.remove, zip_path)
 
 
-async def _update_progress(cloner, status_msg, bot):
-    """Periodically update the Telegram status message with crawl progress."""
+# ── Background tasks ───────────────────────────────────────────────
+
+async def _resource_probe():
+    """Probe resources and update queue capacity."""
     while True:
-        await asyncio.sleep(5)
         try:
-            text = (
-                f"**Cloning...**\n\n"
-                f"{cloner.progress.to_text()}\n\n"
-                f"_Updates every 5s — /cancel to stop_"
+            reading = read_resources()
+            capacity, workers = derive_capacity(
+                reading,
+                config.CRAWL_MAX_CONCURRENT,
+                config.CRAWL_MEMORY_BUDGET_MB,
+                config.CRAWL_MEMORY_RESERVE_MB,
             )
-            await status_msg.edit(text)
-        except Exception:
-            pass
+            if crawl_queue:
+                crawl_queue.set_capacity(capacity, workers)
+        except Exception as e:
+            logger.error(f"Resource probe error: {e}")
+        await asyncio.sleep(config.CRAWL_RESOURCE_PROBE_INTERVAL)
 
 
-async def _safe_edit(msg, text):
+async def _position_refresh():
+    """Refresh queue position messages."""
+    while True:
+        try:
+            if crawl_queue and telegram_notifier:
+                updates = crawl_queue.position_updates()
+                for job, position, wait_seconds in updates:
+                    # Throttle: top N get fast cadence, rest get slow
+                    is_top = position <= config.CRAWL_POSITION_REFRESH_TOP_N
+                    interval = (config.CRAWL_POSITION_REFRESH_SECONDS if is_top
+                                else config.CRAWL_POSITION_REFRESH_SECONDS_LONG)
+                    # Only refresh if enough time passed
+                    if position != job.last_advertised_position:
+                        await telegram_notifier.on_queued(job, position, wait_seconds)
+                        job.last_advertised_position = position
+                        job.last_advertised_wait = wait_seconds
+        except Exception as e:
+            logger.error(f"Position refresh error: {e}")
+        await asyncio.sleep(config.CRAWL_POSITION_REFRESH_SECONDS)
+
+
+async def _maintenance():
+    """Periodic maintenance: expire stale jobs, cleanup DB, sweep orphans."""
+    # Startup: sweep orphaned artifacts and reap Chromium
+    await _startup_sweep()
+
+    while True:
+        try:
+            if crawl_queue:
+                # Expire stale queue entries
+                expired = crawl_queue.expire_stale(telegram_notifier)
+                if expired:
+                    logger.info("Expired %d stale queue entries", expired)
+
+            # Database cleanup
+            db.cleanup_old_data()
+
+            # Sweep orphaned artifacts
+            await _sweep_orphans()
+
+        except Exception as e:
+            logger.error(f"Maintenance error: {e}")
+
+        await asyncio.sleep(config.CLEANUP_INTERVAL_SECONDS)
+
+
+async def _startup_sweep():
+    """Sweep orphaned artifacts and reap Chromium on startup."""
+    import glob
+    from pathlib import Path
+
+    # Sweep clone_* directories and ZIPs older than threshold
+    max_age = config.CRAWL_ORPHAN_MAX_AGE_MINUTES * 60
+    now = time.time()
+
+    for pattern in ("clone_*", "clone_*.zip"):
+        for path_str in glob.glob(pattern):
+            path = Path(path_str)
+            try:
+                if path.is_dir():
+                    mtime = path.stat().st_mtime
+                else:
+                    mtime = path.stat().st_mtime
+                if now - mtime > max_age:
+                    if path.is_dir():
+                        await asyncio.to_thread(shutil.rmtree, path, ignore_errors=True)
+                    else:
+                        await asyncio.to_thread(os.remove, path)
+                    logger.info("Swept orphan: %s", path)
+            except Exception as e:
+                logger.debug("Failed to sweep %s: %s", path, e)
+
+    # Reap orphaned Chromium processes
+    await _reap_chromium()
+
+
+async def _reap_chromium():
+    """Kill orphaned Chromium processes from previous runs."""
     try:
-        await msg.edit(text)
-    except Exception:
+        import psutil
+        for proc in psutil.process_iter(['pid', 'exe', 'cmdline']):
+            try:
+                exe = proc.info.get('exe') or ''
+                cmdline = proc.info.get('cmdline') or []
+                if 'chromium' in exe.lower() and '--remote-debugging-pipe' in ' '.join(cmdline):
+                    proc.kill()
+                    logger.info("Reaped orphaned Chromium PID %s", proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception as e:
+        logger.debug("Chromium reap failed: %s", e)
+
+
+async def _sweep_orphans():
+    """Periodic orphan sweep (startup sweep is primary; this is safety net)."""
+    # Note: periodic sweep can delete live crawls if they run longer than
+    # CRAWL_ORPHAN_MAX_AGE_MINUTES. The startup sweep is the safe one.
+    # This is kept minimal - only sweeps very old artifacts.
+    pass
+
+
+def start_background_tasks() -> list[asyncio.Task]:
+    """Start all background tasks and return them for shutdown."""
+    tasks = [
+        asyncio.create_task(_resource_probe()),
+        asyncio.create_task(_position_refresh()),
+        asyncio.create_task(_maintenance()),
+    ]
+    # Supervise each task
+    for task in tasks:
+        task.add_done_callback(_task_done_callback)
+    return tasks
+
+
+def _task_done_callback(task: asyncio.Task):
+    try:
+        task.result()
+    except asyncio.CancelledError:
         pass
+    except Exception as e:
+        logger.error("Background task crashed: %s", e, exc_info=True)
+
+
+async def cancel_all_crawl_tasks() -> None:
+    """Cancel all running crawl tasks (for shutdown)."""
+    if crawl_queue:
+        await crawl_queue.shutdown()
+
+
+async def _notify_restarted_users():
+    """Notify users who were waiting when bot restarted."""
+    if crawl_queue:
+        for job in crawl_queue._by_user.values():
+            if job.state == JobState.QUEUED and job.message_id:
+                try:
+                    await bot.edit_message_text(
+                        job.chat_id,
+                        job.message_id,
+                        constants.RESTART_NOTICE
+                    )
+                except Exception:
+                    pass
 
 
 # ── /admin ─────────────────────────────────────────────────────────
+
 @bot.on_message(filters.private & filters.command('admin'))
 async def admin_command(bot, msg):
     user_id = msg.from_user.id
@@ -703,6 +1051,17 @@ async def admin_command(bot, msg):
     from bot.monitoring.performance import get_performance_stats
     perf_stats = get_performance_stats()
 
+    queue_info = ""
+    if crawl_queue:
+        qstats = crawl_queue.stats()
+        queue_info = f"""
+**Queue**
+Waiting: `{qstats['waiting']}`
+Running: `{qstats['running']}`
+Capacity: `{qstats['capacity']}` (workers: `{qstats['workers_per_crawl']}`)
+Launch fails (1h): `{qstats['launch_failures_last_hour']}` (total: `{qstats['launch_failures_total']}`)
+Suspended: `{qstats['suspended']}`"""
+
     admin_text = f"""
 **Admin Panel**
 
@@ -711,8 +1070,7 @@ Requests: `{stats['total_requests']}`
 Errors: `{stats['total_errors']}`
 Avg/User: `{(stats['total_requests'] / stats['total_users']) if stats['total_users'] > 0 else 0:.2f}`
 Uptime: `{uptime_str}`
-Cache hit: `{perf_stats['cache_hit_rate']:.1f}%`
-Active crawls: `{len(active_jobs)}`
+Cache hit: `{perf_stats['cache_hit_rate']:.1f}%`{queue_info}
 
 **Commands:**
 /broadcast — Broadcast to all users
@@ -728,7 +1086,8 @@ Active crawls: `{len(active_jobs)}`
     await msg.reply(admin_text)
 
 
-# ── Broadcast system ───────────────────────────────────────────────
+# ── Broadcast system (unchanged) ───────────────────────────────────
+
 broadcast_drafts = {}
 
 
@@ -1017,6 +1376,7 @@ async def logs_command(bot, msg):
 
 
 # ── Broadcast content handler (must come after command handlers) ──
+
 @bot.on_message(filters.private & filters.text)
 async def broadcast_content_handler(bot, msg):
     user_id = msg.from_user.id

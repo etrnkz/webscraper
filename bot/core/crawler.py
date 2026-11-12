@@ -12,6 +12,8 @@ from urllib.parse import urljoin, urlparse, urldefrag, unquote
 import httpx
 from playwright.async_api import async_playwright
 
+from bot.errors import BrowserLaunchError
+
 logger = logging.getLogger(__name__)
 
 MIME_MAP = {
@@ -200,12 +202,18 @@ class WebCloner:
         max_time: int = 300,
         cookies_file: str = None,
         crawl_scope: str = 'same-domain',
+        asset_concurrency: int = 4,
     ):
+        # Ensure concurrency is at least 1 (0 = deadlock)
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be >= 1, got {concurrency}")
+
         self.start_url = start_url
         self.output_dir = output_dir
         self.max_pages = max_pages
         self.max_depth = max_depth
         self.concurrency = concurrency
+        self.asset_concurrency = asset_concurrency
         self.page_timeout = page_timeout
         self.asset_timeout = asset_timeout
         self.max_time = max_time
@@ -225,7 +233,7 @@ class WebCloner:
         self._html_paths: dict[str, str] = {}
         self._discovered_videos: list[str] = []
         self._semaphore = asyncio.Semaphore(concurrency)
-        self._asset_semaphore = asyncio.Semaphore(concurrency * 2)
+        self._asset_semaphore = asyncio.Semaphore(asset_concurrency)
         self._cancel_event = asyncio.Event()
 
     def cancel(self):
@@ -237,65 +245,81 @@ class WebCloner:
         os.makedirs(self.output_dir, exist_ok=True)
         self.progress.status = 'launching browser'
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-extensions',
-                ],
-            )
-            context = await browser.new_context(
-                user_agent=(
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Safari/537.36'
-                ),
-                viewport={'width': 1920, 'height': 1080},
-                ignore_https_errors=True,
-            )
-
-            if self.cookies_file and os.path.exists(self.cookies_file):
-                try:
-                    with open(self.cookies_file, 'r') as f:
-                        cookies = json.load(f)
-                    await context.add_cookies(cookies)
-                    self.progress.status = 'cookies loaded'
-                    logger.info(f"Loaded {len(cookies)} cookies from {self.cookies_file}")
-                except Exception as e:
-                    logger.error(f"Failed to load cookies: {e}")
-
-            page = await context.new_page()
-
-            await self.queue.put(0, (self.start_url, 0))
-
-            workers = [asyncio.create_task(self._worker(context))
-                       for _ in range(min(self.concurrency, self.max_pages))]
-
-            try:
-                await asyncio.wait_for(self.queue.join(), timeout=self.max_time)
-            except asyncio.TimeoutError:
-                self._cancel_event.set()
-                self.progress.status = 'time limit reached'
-                self._drain_queue()
-
-            for w in workers:
-                w.cancel()
-
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*workers, return_exceptions=True),
-                    timeout=10,
+        browser = None
+        try:
+            # Wrap the ENTIRE async_playwright context manager because the Node driver
+            # spawns on context-manager entry, and memory pressure often kills it there.
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-extensions',
+                    ],
                 )
-            except asyncio.TimeoutError:
-                logger.warning("Worker cleanup timed out, force-closing browser")
+                context = await browser.new_context(
+                    user_agent=(
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/120.0.0.0 Safari/537.36'
+                    ),
+                    viewport={'width': 1920, 'height': 1080},
+                    ignore_https_errors=True,
+                )
 
-            try:
-                await browser.close()
-            except Exception:
-                pass
+                if self.cookies_file and os.path.exists(self.cookies_file):
+                    try:
+                        with open(self.cookies_file, 'r') as f:
+                            cookies = json.load(f)
+                        await context.add_cookies(cookies)
+                        self.progress.status = 'cookies loaded'
+                        logger.info(f"Loaded {len(cookies)} cookies from {self.cookies_file}")
+                    except Exception as e:
+                        logger.error(f"Failed to load cookies: {e}")
+
+                page = await context.new_page()
+
+                await self.queue.put(0, (self.start_url, 0))
+
+                workers = [asyncio.create_task(self._worker(context))
+                           for _ in range(min(self.concurrency, self.max_pages))]
+
+                try:
+                    await asyncio.wait_for(self.queue.join(), timeout=self.max_time)
+                except asyncio.TimeoutError:
+                    self._cancel_event.set()
+                    self.progress.status = 'time limit reached'
+                    self._drain_queue()
+
+                for w in workers:
+                    w.cancel()
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*workers, return_exceptions=True),
+                        timeout=10,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Worker cleanup timed out, force-closing browser")
+
+        except Exception as e:
+            # Classify the launch failure
+            kind = BrowserLaunchError.Kind.TRANSIENT
+            error_msg = str(e).lower()
+            if 'no such file' in error_msg or 'executable' in error_msg or 'missing' in error_msg:
+                kind = BrowserLaunchError.Kind.CONFIGURATION
+            elif 'memory' in error_msg or 'oom' in error_msg or 'cannot allocate' in error_msg or 'resource' in error_msg:
+                kind = BrowserLaunchError.Kind.RESOURCE_PRESSURE
+            raise BrowserLaunchError(f"Chromium launch failed: {e}", kind, e) from e
+        finally:
+            # Ensure browser is always closed, even on cancellation or error
+            if browser:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
 
         self.progress.status = 'downloading videos'
         await self._download_videos()
@@ -428,7 +452,7 @@ class WebCloner:
                     }
                 });
                 document.querySelectorAll('style').forEach(s => {
-                    const m = s.textContent.match(/url\\(([^)]+)\\)/g);
+                    const m = s.textContent.match(/url\(([^)]+)\)/g);
                     if (m) m.forEach(u => {
                         const inner = u.slice(4, -1).trim().replace(/['"]/g, '');
                         if (!inner.startsWith('data:')) {
@@ -505,11 +529,12 @@ class WebCloner:
                 logger.debug(f"Video download failed {video_url}: {e}")
 
     async def _download_assets(self, urls: list[str]):
+        # Use asset_concurrency for the connection pool and semaphore
         async with httpx.AsyncClient(
             timeout=self.asset_timeout,
             follow_redirects=True,
             verify=False,
-            limits=httpx.Limits(max_connections=self.concurrency),
+            limits=httpx.Limits(max_connections=self.asset_concurrency),
         ) as client:
             tasks = []
             for url in urls:
