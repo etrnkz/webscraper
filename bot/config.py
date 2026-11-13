@@ -99,6 +99,7 @@ CRAWL_ASSET_CONCURRENCY = int(os.getenv('CRAWL_ASSET_CONCURRENCY', '4'))  # conc
 CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', '900'))  # maintenance interval
 CRAWL_FORCE_LAUNCH_FAILURE = int(os.getenv('CRAWL_FORCE_LAUNCH_FAILURE', '0'))  # fault injection: first N launches fail
 CRAWL_FORCE_LAUNCH_FAILURE_KIND = os.getenv('CRAWL_FORCE_LAUNCH_FAILURE_KIND', 'resource_pressure')  # kind of injected failure
+CRAWL_CPU_QUOTA_OVERRIDE = int(os.getenv('CRAWL_CPU_QUOTA_OVERRIDE', '0'))  # override CPU quota detection (0=auto)
 
 # Logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()

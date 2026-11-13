@@ -194,8 +194,15 @@ def read_resources() -> ResourceReading:
                     cpu_source = "cgroup_v1"
 
     if cpu_quota_cores is None and cpu_affinity_cores > 0:
-        cpu_quota_cores = float(cpu_affinity_cores)
-        cpu_source = "affinity"
+        # Check for explicit override first (for containers where cgroup isn't exposed)
+        import bot.config as config
+        override = getattr(config, 'CRAWL_CPU_QUOTA_OVERRIDE', None)
+        if override and override > 0:
+            cpu_quota_cores = float(override)
+            cpu_source = "override"
+        else:
+            cpu_quota_cores = float(cpu_affinity_cores)
+            cpu_source = "affinity"
 
     # Memory: try cgroup v2, then v1, then meminfo
     memory_available_mb = 0
@@ -288,8 +295,17 @@ def derive_capacity(
         - capacity: max concurrent crawls (0 means queue-only, no admission)
         - workers_per_crawl: page workers per crawl (>= 1)
     """
-    # CPU slots: at least 1, from cgroup quota if available, else affinity
-    cpu_slots = max(1, int(reading.cpu_quota_cores or reading.cpu_affinity_cores or 1))
+    # CPU slots for capacity calculation: from cgroup quota if available, else affinity
+    # But for workers calculation, we need the TRUE CPU quota (not affinity fallback)
+    cpu_slots_for_capacity = max(1, int(reading.cpu_quota_cores or reading.cpu_affinity_cores or 1))
+    
+    # For workers calculation, use ONLY the cgroup quota (not affinity fallback)
+    # If we only have affinity, assume 1 worker per crawl to be safe
+    if reading.cpu_source in ("cgroup_v2", "cgroup_v1", "override"):
+        true_cpu_slots = max(1, int(reading.cpu_quota_cores or 1))
+    else:
+        # No cgroup quota detected - be conservative
+        true_cpu_slots = 2  # Assume 2 cores as safe default
 
     # Memory headroom: host available minus reserve, bounded by cgroup limit if present
     if reading.memory_limit_mb is not None:
@@ -303,17 +319,18 @@ def derive_capacity(
 
     # Capacity is the minimum of CPU, memory, and the hard ceiling
     # Allow capacity to reach 0 (queue-only mode)
-    capacity = min(cpu_slots, memory_slots, max_concurrent)
+    capacity = min(cpu_slots_for_capacity, memory_slots, max_concurrent)
     capacity = max(0, capacity)
 
-    # Workers per crawl: divide CPU slots among concurrent crawls
-    # Ensures capacity * workers <= cpu_slots
-    workers_per_crawl = max(1, cpu_slots // max(1, capacity))
+    # Workers per crawl: divide TRUE CPU slots among concurrent crawls
+    # Ensures capacity * workers <= true_cpu_slots
+    workers_per_crawl = max(1, true_cpu_slots // max(1, capacity))
 
     logger.info(
-        "Derived capacity: cpu_slots=%d, memory_headroom=%d MB, "
+        "Derived capacity: cpu_slots(cap)=%d, cpu_slots(true)=%d, memory_headroom=%d MB, "
         "memory_slots=%d, max_concurrent=%d => capacity=%d, workers=%d",
-        cpu_slots,
+        cpu_slots_for_capacity,
+        true_cpu_slots,
         headroom_mb,
         memory_slots,
         max_concurrent,
