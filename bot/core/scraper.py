@@ -61,9 +61,40 @@ bot_start_time = datetime.now()
 # User settings (persist across restarts)
 user_settings: dict[int, dict] = {}  # user_id -> {cookies_file, subdomains}
 
-# Queue and notifier (initialized in main)
-crawl_queue: CrawlQueue | None = None
-telegram_notifier: "TelegramNotifier | None" = None
+# Queue and notifier (initialized at module level)
+def _make_runner():
+    """Create runner function that wraps _run_crawl in a task."""
+    async def runner(job: CrawlJob):
+        return asyncio.create_task(_run_crawl(job))
+    return runner
+
+def _charge_usage(user_id: int) -> None:
+    db.increment_usage(user_id)
+
+def _get_usage(user_id: int) -> int:
+    return db.get_usage_count(user_id)
+
+crawl_queue = CrawlQueue(
+    runner=_make_runner(),
+    charge=_charge_usage,
+    usage_of=_get_usage,
+    max_queue_size=config.CRAWL_MAX_QUEUE_SIZE,
+    max_concurrent=config.CRAWL_MAX_CONCURRENT,
+    memory_budget_mb=config.CRAWL_MEMORY_BUDGET_MB,
+    memory_reserve_mb=config.CRAWL_MEMORY_RESERVE_MB,
+    retry_limit=config.CRAWL_BROWSER_RETRY_LIMIT,
+    retry_base_seconds=config.CRAWL_BROWSER_RETRY_BASE_SECONDS,
+    launch_failure_threshold=config.CRAWL_LAUNCH_FAILURE_THRESHOLD,
+    launch_suspend_seconds=config.CRAWL_LAUNCH_SUSPEND_SECONDS,
+    max_queue_age_minutes=config.CRAWL_MAX_QUEUE_AGE_MINUTES,
+    estimate_minutes_per_crawl=config.CRAWL_ESTIMATE_MINUTES_PER_CRAWL,
+    position_refresh_seconds=config.CRAWL_POSITION_REFRESH_SECONDS,
+    position_refresh_seconds_long=config.CRAWL_POSITION_REFRESH_SECONDS_LONG,
+    position_refresh_top_n=config.CRAWL_POSITION_REFRESH_TOP_N,
+)
+
+telegram_notifier = TelegramNotifier(bot)
+crawl_queue.set_notifier(telegram_notifier)
 
 # Background tasks
 _background_tasks: list[asyncio.Task] = []
