@@ -36,7 +36,8 @@ bot = Client(
 )
 
 # Force subscribe
-from bot.plugins.force_subscribe import force_subscribe
+from bot.plugins.force_subscribe import ForceSubscribe
+force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
 
 
 # ── Notifier ──────────────────────────────────────────────────────────
