@@ -653,7 +653,7 @@ async def _run_crawl(job: CrawlJob):
                     text = (
                         f"**Cloning...**\n\n"
                         f"{cloner.progress.to_text()}\n\n"
-                        f"{_make_progress_bar(cloner.progress.pages_crawled, cloner.progress.pages_discovered)}\n\n"
+                        f"{_make_progress_bar(cloner.progress.pages_downloaded, cloner.progress.pages_discovered)}\n\n"
                         f"_Updates every 5s — /cancel to stop_"
                     )
                     await bot.edit_message_text(job.chat_id, job.message_id, text)
@@ -683,9 +683,9 @@ async def _run_crawl(job: CrawlJob):
         crawl_queue.record_duration(job, duration)
 
         # Get stats
-        pages = cloner.progress.pages_crawled
-        assets = cloner.progress.assets_found
-        videos = cloner.progress.videos_found
+        pages = cloner.progress.pages_downloaded
+        assets = cloner.progress.assets_downloaded
+        videos = cloner.progress.videos_downloaded
         errors = len(cloner.progress.errors)
 
         if pages == 0:
