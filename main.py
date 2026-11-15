@@ -10,7 +10,8 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Import after path setup
-from bot.core.scraper import bot, logger, constants, crawl_queue, telegram_notifier, start_background_tasks, cancel_all_crawl_tasks, _notify_restarted_users
+from bot.core.scraper import bot, logger, crawl_queue, telegram_notifier, start_background_tasks, cancel_all_crawl_tasks, _notify_restarted_users
+from bot import constants
 from bot import config
 from hydrogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 

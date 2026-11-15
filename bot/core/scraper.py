@@ -12,8 +12,7 @@ from typing import Optional
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from bot import config
-from bot.config import constants
+from bot import config, constants
 from bot.database import db
 from bot.errors import BrowserLaunchError
 from bot.queue.crawl_queue import CrawlJob, CrawlQueue, Outcome, JobState
