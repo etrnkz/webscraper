@@ -17,14 +17,9 @@ from bot.errors import BrowserLaunchError
 from bot.queue.crawl_queue import CrawlJob, CrawlQueue, Outcome, JobState
 from bot.queue.resources import read_resources, derive_capacity, ResourceReading
 from bot.services.botapi import upgrade_premium_markup
-from bot.utils import (
-    normalize_url,
-    extract_domain,
-    is_valid_url,
-    is_safe_domain,
-    format_size,
-    create_zip,
-)
+from bot.utils.validators import normalize_url, is_valid_url, is_safe_domain
+from bot.utils.helpers import extract_domain, format_file_size as format_size
+from bot.modules.zip_packager import create_zip
 from bot.user_settings import user_settings
 
 logger = logging.getLogger(__name__)
