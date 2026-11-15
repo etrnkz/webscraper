@@ -36,7 +36,7 @@ bot = Client(
 )
 
 # Force subscribe
-from bot.force_subscribe import force_subscribe
+from bot.plugins.force_subscribe import force_subscribe
 
 
 # ── Notifier ──────────────────────────────────────────────────────────
