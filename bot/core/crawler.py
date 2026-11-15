@@ -203,6 +203,8 @@ class WebCloner:
         cookies_file: str = None,
         crawl_scope: str = 'same-domain',
         asset_concurrency: int = 4,
+        crawl_queue=None,          # For mark_browser_launched callback
+        job=None,                  # Job to charge usage for
     ):
         # Ensure concurrency is at least 1 (0 = deadlock)
         if concurrency < 1:
@@ -220,6 +222,8 @@ class WebCloner:
         self.cookies_file = cookies_file
         self.crawl_scope = crawl_scope
         self._start_time = time.time()
+        self._crawl_queue = crawl_queue
+        self._job = job
 
         parsed = urlparse(start_url)
         self.scheme = parsed.scheme
@@ -259,6 +263,10 @@ class WebCloner:
                         '--disable-extensions',
                     ],
                 )
+                # Browser launched successfully - charge usage quota
+                if self._crawl_queue and self._job:
+                    self._crawl_queue.mark_browser_launched(self._job)
+
                 context = await browser.new_context(
                     user_agent=(
                         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -369,7 +377,7 @@ class WebCloner:
     async def _auto_scroll(self, page):
         """Scroll page to trigger lazy-loaded content."""
         try:
-            await page.evaluate('''async () => {
+            await page.evaluate(r'''async () => {
                 await new Promise((resolve) => {
                     let totalHeight = 0;
                     const distance = 500;
@@ -425,7 +433,7 @@ class WebCloner:
             self._html_paths[url] = full_path
             self.progress.pages_downloaded += 1
 
-            links = await page.evaluate('''() => {
+            links = await page.evaluate(r'''() => {
                 const urls = new Set();
                 document.querySelectorAll('a[href]').forEach(a => {
                     try { urls.add(new URL(a.href, location.href).href); } catch(e) {}
@@ -440,7 +448,7 @@ class WebCloner:
                         score = _score_link(clean, depth + 1, url)
                         await self.queue.put(score, (clean, depth + 1))
 
-            asset_urls = await page.evaluate('''() => {
+            asset_urls = await page.evaluate(r'''() => {
                 const urls = new Set();
                 document.querySelectorAll(
                     'img[src], link[href], script[src], source[src], video[src], audio[src], ' +

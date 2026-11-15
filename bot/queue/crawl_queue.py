@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import bisect
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Optional, Protocol
@@ -68,6 +68,7 @@ class CrawlJob:
     state: JobState = JobState.QUEUED
     sequence: int = 0               # submission order; preserved across retries
     enqueued_at: float = 0.0
+    admitted_at: float = 0.0        # set when job claims a slot (for held-window duration)
     not_before: float = 0.0         # monotonic deadline; 0 = eligible now
     launch_attempts: int = 0
     charged: bool = False
@@ -103,7 +104,7 @@ class CrawlQueue:
 
     def __init__(
         self,
-        runner: Callable[[CrawlJob], asyncio.Task],
+        runner: Callable[[CrawlJob], asyncio.Awaitable[None]],
         charge: Callable[[int], None],
         usage_of: Callable[[int], int],
         max_queue_size: int,
@@ -117,8 +118,6 @@ class CrawlQueue:
         max_queue_age_minutes: int,
         estimate_minutes_per_crawl: int,
         position_refresh_seconds: int,
-        position_refresh_seconds_long: int,
-        position_refresh_top_n: int,
         clock: Callable[[], float] = time.monotonic,
     ):
         # Injected dependencies
@@ -138,13 +137,12 @@ class CrawlQueue:
         self._max_queue_age_seconds = max_queue_age_minutes * 60
         self._estimate_minutes_per_crawl = estimate_minutes_per_crawl
         self._position_refresh_seconds = position_refresh_seconds
-        self._position_refresh_seconds_long = position_refresh_seconds_long
-        self._position_refresh_top_n = position_refresh_top_n
         self._clock = clock
 
         # Internal state
         self._by_user: dict[int, CrawlJob] = {}      # user_id -> CrawlJob (single source of truth)
         self._pending: list[CrawlJob] = []           # sorted by sequence
+        self._delivering: list[CrawlJob] = []        # jobs in DELIVERING state
         self._running_count: int = 0
         self._capacity: int = 0
         self._workers_per_crawl: int = 1
@@ -169,6 +167,9 @@ class CrawlQueue:
         # Active crawl tasks (for shutdown)
         self._crawl_tasks: set[asyncio.Task] = set()
 
+        # Shutdown flag
+        self._shutting_down: bool = False
+
     def set_notifier(self, notifier: JobNotifier) -> None:
         """Set the notifier (called after construction to avoid circular deps)."""
         self._notifier = notifier
@@ -183,6 +184,9 @@ class CrawlQueue:
         Lower capacity takes effect immediately. Higher capacity requires
         two consecutive agreeing probes (hysteresis).
         """
+        if self._shutting_down:
+            return
+
         if capacity < self._capacity:
             self._capacity = capacity
             self._candidate_capacity = None
@@ -236,8 +240,13 @@ class CrawlQueue:
             job.slot_held = True
             job.state = JobState.ADMITTED
             job.enqueued_at = now
+            job.admitted_at = now
             self._by_user[job.user_id] = job
             # Admitted jobs go straight to runner, not _pending
+            loop = asyncio.get_event_loop()
+            task = loop.create_task(self._runner(job))
+            self._crawl_tasks.add(task)
+            task.add_done_callback(self._crawl_tasks.discard)
             return Admission(
                 outcome=Outcome.ADMITTED,
                 capacity=self._capacity,
@@ -273,6 +282,8 @@ class CrawlQueue:
 
     def pump(self) -> None:
         """Admit waiting jobs up to capacity. Synchronous, no awaits."""
+        if self._shutting_down:
+            return
         while self._running_count < self._capacity and not self._is_suspended():
             # Find first eligible job
             eligible = None
@@ -288,8 +299,10 @@ class CrawlQueue:
             self._running_count += 1
             eligible.slot_held = True
             eligible.state = JobState.ADMITTED
+            eligible.admitted_at = self._clock()
             # Create the crawl task
-            task = self._runner(eligible)
+            loop = asyncio.get_event_loop()
+            task = loop.create_task(self._runner(eligible))
             self._crawl_tasks.add(task)
             task.add_done_callback(self._crawl_tasks.discard)
 
@@ -310,7 +323,7 @@ class CrawlQueue:
             return False
         if self._is_suspended():
             return False
-        if self._running_count >= self._capacity:
+        if self._running_count > self._capacity:
             return False
         return True
 
@@ -326,7 +339,7 @@ class CrawlQueue:
         job.state = JobState.QUEUED
         bisect.insort(self._pending, job, key=lambda j: j.sequence)
         # Notify asynchronously (caller handles)
-        self._notify_deferred(job)
+        # self._notify_deferred(job)  # REMOVED - caller handles notification
 
     def mark_browser_launched(self, job: CrawlJob) -> None:
         """Called after successful chromium.launch().
@@ -357,11 +370,24 @@ class CrawlQueue:
             # Configuration or transient failures don't trip the breaker
             pass
 
+    def requeue(self, job: CrawlJob, delay_seconds: float) -> None:
+        """Re-queue a job after a launch failure with exponential backoff.
+
+        Called by runner when retry budget not exhausted.
+        """
+        job.not_before = self._clock() + delay_seconds
+        job.state = JobState.QUEUED
+        job.launch_attempts += 1
+        bisect.insort(self._pending, job, key=lambda j: j.sequence)
+        self.pump()
+
     def release_slot(self, job: CrawlJob) -> None:
         """Release the capacity slot (called after archive built, before upload)."""
         if job.slot_held:
             self._running_count = max(0, self._running_count - 1)
             job.slot_held = False
+        if job in self._delivering:
+            self._delivering.remove(job)
         # Pump to admit next waiting job
         self.pump()
 
@@ -369,6 +395,8 @@ class CrawlQueue:
         """Mark job as completed (success or failure after launch)."""
         self._by_user.pop(job.user_id, None)
         # Job already removed from _pending when admitted
+        if job in self._delivering:
+            self._delivering.remove(job)
 
     def abandon(self, job: CrawlJob) -> None:
         """Abandon a job that was admitted but never got a status message."""
@@ -378,6 +406,8 @@ class CrawlQueue:
             job.slot_held = False
         if job in self._pending:
             self._pending.remove(job)
+        if job in self._delivering:
+            self._delivering.remove(job)
         job.status_ready.set()  # Unblock any waiting runner
 
     # ----------------------------------------------------------------------
@@ -396,7 +426,8 @@ class CrawlQueue:
             return ("none", False)
 
         if job.state == JobState.QUEUED:
-            self._pending.remove(job)
+            if job in self._pending:
+                self._pending.remove(job)
             self._by_user.pop(user_id, None)
             job.state = JobState.CANCELLED
             self._notify_cancelled(job, charged=False)
@@ -404,6 +435,8 @@ class CrawlQueue:
 
         if job.state in (JobState.ADMITTED, JobState.LAUNCHING):
             # Slot held but browser not yet launched
+            if job in self._pending:
+                self._pending.remove(job)
             if job.slot_held:
                 self._running_count = max(0, self._running_count - 1)
                 job.slot_held = False
@@ -433,10 +466,10 @@ class CrawlQueue:
     # Expiry (called by maintenance task)
     # ----------------------------------------------------------------------
 
-    def expire_stale(self, notifier: JobNotifier) -> int:
+    def expire_stale(self) -> list[CrawlJob]:
         """Expire jobs that have been queued too long.
 
-        Returns the number of jobs expired.
+        Returns the list of expired jobs. Caller must notify via notifier.
         """
         now = self._clock()
         max_age = self._max_queue_age_seconds
@@ -450,10 +483,8 @@ class CrawlQueue:
             self._pending.remove(job)
             self._by_user.pop(job.user_id, None)
             job.state = JobState.EXPIRED
-            # Notify asynchronously - caller must await
-            asyncio.create_task(notifier.on_expired(job))
 
-        return len(expired)
+        return expired
 
     # ----------------------------------------------------------------------
     # Position updates (called by position refresh task)
@@ -507,10 +538,6 @@ class CrawlQueue:
         if self._notifier:
             asyncio.create_task(self._notifier.on_retry(job, attempt, delay_seconds, kind))
 
-    def _notify_deferred(self, job: CrawlJob) -> None:
-        if self._notifier:
-            asyncio.create_task(self._notifier.on_deferred(job))
-
     def _notify_failed(self, job: CrawlJob, reason: str) -> None:
         if self._notifier:
             asyncio.create_task(self._notifier.on_failed(job, reason))
@@ -518,6 +545,10 @@ class CrawlQueue:
     def _notify_cancelled(self, job: CrawlJob, charged: bool) -> None:
         if self._notifier:
             asyncio.create_task(self._notifier.on_cancelled(job, charged))
+
+    def _notify_expired(self, job: CrawlJob) -> None:
+        if self._notifier:
+            asyncio.create_task(self._notifier.on_expired(job))
 
     # ----------------------------------------------------------------------
     # Stats and shutdown
@@ -527,20 +558,30 @@ class CrawlQueue:
         """Get queue statistics for /admin."""
         now = self._clock()
         recent_failures = sum(1 for t, _ in self._launch_failures if now - t < 3600)
+        failures_by_kind = Counter(kind for _, kind in self._launch_failures)
         return {
             "waiting": len([j for j in self._pending if j.state == JobState.QUEUED]),
             "running": self._running_count,
+            "delivering": len(self._delivering),
             "capacity": self._capacity,
             "workers_per_crawl": self._workers_per_crawl,
+            "cpu_slots": getattr(self, '_cpu_slots', 0),
+            "memory_available_mb": getattr(self, '_memory_available_mb', 0),
+            "memory_reserve_mb": getattr(self, '_memory_reserve_mb', 0),
+            "memory_budget_mb": getattr(self, '_memory_budget_mb', 0),
             "launch_failures_last_hour": recent_failures,
             "launch_failures_total": len(self._launch_failures),
+            "launch_failures_by_kind": dict(failures_by_kind),
             "suspended": self._is_suspended(),
             "suspended_until": self._suspended_until if self._is_suspended() else 0,
             "consecutive_failures": self._consecutive_failures,
+            "last_reading": getattr(self, '_last_reading', 0),
+            "last_probe_error": getattr(self, '_last_probe_error', None),
         }
 
     async def shutdown(self) -> None:
         """Cancel and await all crawl tasks."""
+        self._shutting_down = True
         for task in self._crawl_tasks:
             task.cancel()
         if self._crawl_tasks:
@@ -548,7 +589,7 @@ class CrawlQueue:
         self._crawl_tasks.clear()
 
     # ----------------------------------------------------------------------
-    # Construction helper
+    # Launch helper (called by handler after sending first message)
     # ----------------------------------------------------------------------
 
     def launch(self, job: CrawlJob) -> None:

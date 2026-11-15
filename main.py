@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # Import after path setup
 from bot.core.scraper import bot, logger, constants, crawl_queue, telegram_notifier, start_background_tasks, cancel_all_crawl_tasks, _notify_restarted_users
+from bot import config
+from hydrogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 
 async def _main():
@@ -20,6 +22,38 @@ async def _main():
 
     # Start the bot client
     await bot.start()
+
+    # Register bot menu commands
+    USER_COMMANDS = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("help", "Show help"),
+        BotCommand("cancel", "Cancel current crawl"),
+        BotCommand("cookies", "Manage cookies"),
+        BotCommand("scope", "Set crawl scope"),
+        BotCommand("settings", "Show your settings"),
+        BotCommand("info", "Page info for a URL"),
+        BotCommand("media", "Media extraction help"),
+        BotCommand("stats", "Your statistics"),
+        BotCommand("version", "Bot version"),
+    ]
+
+    ADMIN_COMMANDS = [
+        BotCommand("admin", "Admin panel"),
+        BotCommand("broadcast", "Broadcast message"),
+        BotCommand("clearcache", "Clear cache"),
+        BotCommand("users", "List users"),
+        BotCommand("topusers", "Top users"),
+        BotCommand("userinfo", "User details"),
+        BotCommand("ban", "Ban user"),
+        BotCommand("unban", "Unban user"),
+    ]
+
+    await bot.set_bot_commands(USER_COMMANDS, scope=BotCommandScopeDefault())
+    for admin_id in config.ADMIN_IDS:
+        await bot.set_bot_commands(
+            USER_COMMANDS + ADMIN_COMMANDS,
+            scope=BotCommandScopeChat(chat_id=admin_id)
+        )
 
     # Start background tasks
     global _background_tasks
