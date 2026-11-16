@@ -40,6 +40,24 @@ from bot.plugins.force_subscribe import ForceSubscribe
 force_subscribe = ForceSubscribe(bot, config.FORCE_SUBSCRIBE_CHANNELS)
 
 
+def safe_handler(handler):
+    """Decorator to wrap handlers and hide raw errors from users."""
+    async def wrapper(bot, msg):
+        try:
+            return await handler(bot, msg)
+        except Exception as e:
+            logger.error(f"Handler error in {handler.__name__}: {e}", exc_info=True)
+            # Try to send a generic error message to user
+            try:
+                if hasattr(msg, 'reply'):
+                    await msg.reply("Something went wrong. Please try again later.")
+                elif hasattr(msg, 'message') and hasattr(msg.message, 'reply'):
+                    await msg.message.reply("Something went wrong. Please try again later.")
+            except Exception:
+                pass
+    return wrapper
+
+
 # ── Notifier ──────────────────────────────────────────────────────────
 
 class TelegramNotifier:
@@ -163,6 +181,7 @@ async def check_force_join(user_id: int, msg: Message) -> bool:
 # ── Callbacks ──────────────────────────────────────────────────────
 
 @bot.on_callback_query()
+@safe_handler
 async def handle_callback(bot, callback_query):
     user_id = callback_query.from_user.id
     data = callback_query.data
@@ -268,6 +287,7 @@ async def handle_callback(bot, callback_query):
 # ── /start ─────────────────────────────────────────────────────────
 
 @bot.on_message(filters.private & filters.command('start'), group=-2)
+@safe_handler
 async def start(bot, msg):
     # Premium welcome with custom emoji
     header_emoji = "🕸"
@@ -304,11 +324,13 @@ async def start(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('help'), group=-1)
+@safe_handler
 async def help_command(bot, msg):
     await msg.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
 
 
 @bot.on_message(filters.private & filters.command('stats'), group=-1)
+@safe_handler
 async def stats_command(bot, msg):
     user_id = msg.from_user.id
     user = db.get_user(user_id)
@@ -324,11 +346,13 @@ async def stats_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('version'), group=-1)
+@safe_handler
 async def version_command(bot, msg):
     await msg.reply(f"{constants.BOT_NAME} v{constants.BOT_VERSION}")
 
 
 @bot.on_message(filters.private & filters.command('cancel'), group=-1)
+@safe_handler
 async def cancel_command(bot, msg):
     user_id = msg.from_user.id
     if crawl_queue is None:
@@ -342,6 +366,7 @@ async def cancel_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('cookies'), group=-1)
+@safe_handler
 async def cookies_command(bot, msg):
     user_id = msg.from_user.id
     args = msg.text.split(maxsplit=1)
@@ -385,6 +410,7 @@ async def cookies_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('scope'), group=-1)
+@safe_handler
 async def scope_command(bot, msg):
     user_id = msg.from_user.id
     args = msg.text.split(maxsplit=1)
@@ -412,6 +438,7 @@ async def scope_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('settings'), group=-1)
+@safe_handler
 async def settings_command(bot, msg):
     user_id = msg.from_user.id
     settings = user_settings.get(user_id, {})
@@ -426,6 +453,7 @@ async def settings_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('info'), group=-1)
+@safe_handler
 async def info_command(bot, msg):
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
@@ -444,6 +472,7 @@ async def info_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('media'), group=-1)
+@safe_handler
 async def media_command(bot, msg):
     await msg.reply(
         "**Media Extraction**\n\n"
@@ -460,6 +489,7 @@ async def media_command(bot, msg):
 # ── Main URL handler → Playwright crawl ───────────────────────────
 
 @bot.on_message(filters.private & filters.regex(r"(?i)(https?://|[\w-]+\.\w{2,})"), group=1)
+@safe_handler
 async def handle_url(bot, msg):
     user_id = msg.from_user.id
     raw_text = msg.text.strip()
@@ -973,6 +1003,7 @@ async def _notify_restarted_users():
 # ── /admin ─────────────────────────────────────────────────────────
 
 @bot.on_message(filters.private & filters.command('admin'), group=-1)
+@safe_handler
 async def admin_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1132,6 +1163,7 @@ async def _bcast_send(draft):
 
 
 @bot.on_message(filters.private & filters.command('broadcast'), group=-1)
+@safe_handler
 async def broadcast_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1147,6 +1179,7 @@ async def broadcast_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('clearcache'), group=-1)
+@safe_handler
 async def clearcache_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1161,6 +1194,7 @@ async def clearcache_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('users'), group=-1)
+@safe_handler
 async def users_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1183,6 +1217,7 @@ async def users_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('topusers'), group=-1)
+@safe_handler
 async def topusers_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1197,6 +1232,7 @@ async def topusers_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('userinfo'), group=-1)
+@safe_handler
 async def userinfo_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1228,6 +1264,7 @@ async def userinfo_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('ban'), group=-1)
+@safe_handler
 async def ban_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1253,6 +1290,7 @@ async def ban_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('unban'), group=-1)
+@safe_handler
 async def unban_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1275,6 +1313,7 @@ async def unban_command(bot, msg):
 
 
 @bot.on_message(filters.private & filters.command('logs'), group=-1)
+@safe_handler
 async def logs_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1298,6 +1337,7 @@ async def logs_command(bot, msg):
 # ── Broadcast content handler (must come after command handlers) ──
 
 @bot.on_message(filters.private & filters.text, group=1)
+@safe_handler
 async def broadcast_content_handler(bot, msg):
     user_id = msg.from_user.id
     draft = broadcast_drafts.get(user_id)
@@ -1337,6 +1377,7 @@ async def broadcast_content_handler(bot, msg):
 
 
 @bot.on_message(filters.private & filters.text, group=2)
+@safe_handler
 async def fallback_handler(bot, msg):
     if broadcast_drafts.get(msg.from_user.id):
         return
