@@ -71,14 +71,65 @@ def premium_markup_json(markup):
     return {"inline_keyboard": out_rows}
 
 
-async def upgrade_premium_markup(message, markup):
-    payload = premium_markup_json(markup)
-    if not payload or not config.BOT_TOKEN:
+async def upgrade_premium_markup(bot, chat_id: int, message_id: int, markup, premium_icons: list):
+    """Upgrade inline keyboard buttons to use premium custom emoji icons via Bot API.
+    
+    Args:
+        bot: Hydrogram Client instance
+        chat_id: Target chat ID
+        message_id: Target message ID
+        markup: InlineKeyboardMarkup to upgrade
+        premium_icons: List of (emoji_char, custom_emoji_id) tuples
+    """
+    # Build custom emoji mapping from provided icons
+    custom_emoji_map = {char: eid for char, eid in premium_icons}
+    
+    rows = getattr(markup, "inline_keyboard", None) or getattr(markup, "keyboard", None)
+    if not rows or not config.BOT_TOKEN:
         return
-    chat_id = getattr(message.chat, "id", None)
-    message_id = getattr(message, "id", None)
-    if chat_id is None or message_id is None:
+    
+    out_rows = []
+    used = False
+    for row in rows:
+        out_buttons = []
+        for btn in row:
+            text = getattr(btn, "text", "") or ""
+            button = {"text": text}
+            icon_id = None
+            if text:
+                for char, eid in custom_emoji_map.items():
+                    if text.startswith(char):
+                        stripped = text[len(char):].lstrip()
+                        if not stripped and len(text) > len(char):
+                            stripped = text[len(char):].lstrip()
+                        button["text"] = stripped or " "
+                        icon_id = eid
+                        break
+            if icon_id:
+                button["icon_custom_emoji_id"] = icon_id
+                used = True
+            cb = getattr(btn, "callback_data", None)
+            url = getattr(btn, "url", None)
+            webapp = getattr(btn, "web_app", None)
+            if cb:
+                button["callback_data"] = cb if isinstance(cb, str) else cb.decode() if isinstance(cb, bytes) else str(cb)
+            elif url:
+                button["url"] = url
+            elif webapp:
+                app_url = getattr(webapp, "url", None)
+                if app_url:
+                    button["web_app"] = {"url": app_url}
+            out_buttons.append(button)
+        out_rows.append(out_buttons)
+    
+    if not used:
         return
+    
+    payload = {"inline_keyboard": out_rows}
+    
+    if not config.BOT_TOKEN:
+        return
+    
     body = {
         "chat_id": chat_id,
         "message_id": message_id,
