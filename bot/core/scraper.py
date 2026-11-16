@@ -318,7 +318,7 @@ async def start(bot, msg):
         [InlineKeyboardButton("💻 Media", callback_data="media"), InlineKeyboardButton("💜 Premium", callback_data="premium")],
     ])
 
-    sent = await msg.reply(text, reply_markup=markup, parse_mode="HTML")
+    sent = await msg.reply(text, reply_markup=markup, parse_mode="html")
     # Upgrade to premium icons asynchronously
     asyncio.create_task(upgrade_premium_markup(bot, sent.chat.id, sent.id, markup, premium_icons))
 
