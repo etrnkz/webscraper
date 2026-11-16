@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from hydrogram import Client, filters
+from hydrogram.enums import ParseMode
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot import config, constants, database as db
@@ -318,7 +319,7 @@ async def start(bot, msg):
         [InlineKeyboardButton("💻 Media", callback_data="media"), InlineKeyboardButton("💜 Premium", callback_data="premium")],
     ])
 
-    sent = await msg.reply(text, reply_markup=markup, parse_mode="html")
+    sent = await msg.reply(text, reply_markup=markup, parse_mode=ParseMode.HTML)
     # Upgrade to premium icons asynchronously
     asyncio.create_task(upgrade_premium_markup(bot, sent.chat.id, sent.id, markup, premium_icons))
 
@@ -1139,9 +1140,9 @@ async def _bcast_send(draft):
 
     parse_mode = None
     if fmt == "md":
-        parse_mode = "markdown"
+        parse_mode = ParseMode.MARKDOWN
     elif fmt == "html":
-        parse_mode = "html"
+        parse_mode = ParseMode.HTML
 
     reply_markup = None
     if buttons:
