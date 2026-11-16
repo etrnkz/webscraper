@@ -267,7 +267,7 @@ async def handle_callback(bot, callback_query):
 
 # ── /start ─────────────────────────────────────────────────────────
 
-@bot.on_message(filters.private & filters.command('start'))
+@bot.on_message(filters.private & filters.command('start'), group=-2)
 async def start(bot, msg):
     # Premium welcome with custom emoji
     header_emoji = "🕸"
@@ -303,12 +303,12 @@ async def start(bot, msg):
     asyncio.create_task(upgrade_premium_markup(bot, sent.chat.id, sent.id, markup, premium_icons))
 
 
-@bot.on_message(filters.private & filters.command('help'))
+@bot.on_message(filters.private & filters.command('help'), group=-1)
 async def help_command(bot, msg):
     await msg.reply(constants.HELP_MESSAGE, disable_web_page_preview=True)
 
 
-@bot.on_message(filters.private & filters.command('stats'))
+@bot.on_message(filters.private & filters.command('stats'), group=-1)
 async def stats_command(bot, msg):
     user_id = msg.from_user.id
     user = db.get_user(user_id)
@@ -323,12 +323,12 @@ async def stats_command(bot, msg):
     )
 
 
-@bot.on_message(filters.private & filters.command('version'))
+@bot.on_message(filters.private & filters.command('version'), group=-1)
 async def version_command(bot, msg):
     await msg.reply(f"{constants.BOT_NAME} v{constants.BOT_VERSION}")
 
 
-@bot.on_message(filters.private & filters.command('cancel'))
+@bot.on_message(filters.private & filters.command('cancel'), group=-1)
 async def cancel_command(bot, msg):
     user_id = msg.from_user.id
     if crawl_queue is None:
@@ -341,7 +341,7 @@ async def cancel_command(bot, msg):
         await msg.reply(f"Cancelled ({state}).")
 
 
-@bot.on_message(filters.private & filters.command('cookies'))
+@bot.on_message(filters.private & filters.command('cookies'), group=-1)
 async def cookies_command(bot, msg):
     user_id = msg.from_user.id
     args = msg.text.split(maxsplit=1)
@@ -384,7 +384,7 @@ async def cookies_command(bot, msg):
         await msg.reply("Reply to a `.json` cookie file with `/cookies`.")
 
 
-@bot.on_message(filters.private & filters.command('scope'))
+@bot.on_message(filters.private & filters.command('scope'), group=-1)
 async def scope_command(bot, msg):
     user_id = msg.from_user.id
     args = msg.text.split(maxsplit=1)
@@ -411,7 +411,7 @@ async def scope_command(bot, msg):
         await msg.reply("Invalid scope. Use `subdomains` or `same-domain`.")
 
 
-@bot.on_message(filters.private & filters.command('settings'))
+@bot.on_message(filters.private & filters.command('settings'), group=-1)
 async def settings_command(bot, msg):
     user_id = msg.from_user.id
     settings = user_settings.get(user_id, {})
@@ -425,7 +425,7 @@ async def settings_command(bot, msg):
     )
 
 
-@bot.on_message(filters.private & filters.command('info'))
+@bot.on_message(filters.private & filters.command('info'), group=-1)
 async def info_command(bot, msg):
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
@@ -443,7 +443,7 @@ async def info_command(bot, msg):
     )
 
 
-@bot.on_message(filters.private & filters.command('media'))
+@bot.on_message(filters.private & filters.command('media'), group=-1)
 async def media_command(bot, msg):
     await msg.reply(
         "**Media Extraction**\n\n"
@@ -459,7 +459,7 @@ async def media_command(bot, msg):
 
 # ── Main URL handler → Playwright crawl ───────────────────────────
 
-@bot.on_message(filters.private & filters.regex(r"(?i)(https?://|[\w-]+\.\w{2,})"))
+@bot.on_message(filters.private & filters.regex(r"(?i)(https?://|[\w-]+\.\w{2,})"), group=1)
 async def handle_url(bot, msg):
     user_id = msg.from_user.id
     raw_text = msg.text.strip()
@@ -972,7 +972,7 @@ async def _notify_restarted_users():
 
 # ── /admin ─────────────────────────────────────────────────────────
 
-@bot.on_message(filters.private & filters.command('admin'))
+@bot.on_message(filters.private & filters.command('admin'), group=-1)
 async def admin_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1131,7 +1131,7 @@ async def _bcast_send(draft):
     return success, failed
 
 
-@bot.on_message(filters.private & filters.command('broadcast'))
+@bot.on_message(filters.private & filters.command('broadcast'), group=-1)
 async def broadcast_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1146,7 +1146,7 @@ async def broadcast_command(bot, msg):
     broadcast_drafts[user_id] = {"msg_id": m.id}
 
 
-@bot.on_message(filters.private & filters.command('clearcache'))
+@bot.on_message(filters.private & filters.command('clearcache'), group=-1)
 async def clearcache_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1160,7 +1160,7 @@ async def clearcache_command(bot, msg):
         await msg.reply(f"Failed: {e}")
 
 
-@bot.on_message(filters.private & filters.command('users'))
+@bot.on_message(filters.private & filters.command('users'), group=-1)
 async def users_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1182,7 +1182,7 @@ async def users_command(bot, msg):
     )
 
 
-@bot.on_message(filters.private & filters.command('topusers'))
+@bot.on_message(filters.private & filters.command('topusers'), group=-1)
 async def topusers_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1196,7 +1196,7 @@ async def topusers_command(bot, msg):
     await msg.reply(f"**Top 10 Users**\n\n{chr(10).join(lines) if lines else 'No data'}")
 
 
-@bot.on_message(filters.private & filters.command('userinfo'))
+@bot.on_message(filters.private & filters.command('userinfo'), group=-1)
 async def userinfo_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1227,7 +1227,7 @@ async def userinfo_command(bot, msg):
         await msg.reply("Invalid ID.")
 
 
-@bot.on_message(filters.private & filters.command('ban'))
+@bot.on_message(filters.private & filters.command('ban'), group=-1)
 async def ban_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1252,7 +1252,7 @@ async def ban_command(bot, msg):
         await msg.reply("Invalid ID.")
 
 
-@bot.on_message(filters.private & filters.command('unban'))
+@bot.on_message(filters.private & filters.command('unban'), group=-1)
 async def unban_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1274,7 +1274,7 @@ async def unban_command(bot, msg):
         await msg.reply("Invalid ID.")
 
 
-@bot.on_message(filters.private & filters.command('logs'))
+@bot.on_message(filters.private & filters.command('logs'), group=-1)
 async def logs_command(bot, msg):
     user_id = msg.from_user.id
     if user_id not in config.ADMIN_IDS:
@@ -1297,7 +1297,7 @@ async def logs_command(bot, msg):
 
 # ── Broadcast content handler (must come after command handlers) ──
 
-@bot.on_message(filters.private & filters.text)
+@bot.on_message(filters.private & filters.text, group=1)
 async def broadcast_content_handler(bot, msg):
     user_id = msg.from_user.id
     draft = broadcast_drafts.get(user_id)
@@ -1336,7 +1336,7 @@ async def broadcast_content_handler(bot, msg):
         return True
 
 
-@bot.on_message(filters.private & filters.text)
+@bot.on_message(filters.private & filters.text, group=2)
 async def fallback_handler(bot, msg):
     if broadcast_drafts.get(msg.from_user.id):
         return
