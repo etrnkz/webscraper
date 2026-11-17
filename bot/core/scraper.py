@@ -458,7 +458,7 @@ async def settings_command(bot, msg):
 async def info_command(bot, msg):
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
-        await msg.reply("Usage: `/info <URL>`")
+        await msg.reply("Usage: `/info <URL>`", parse_mode=ParseMode.MARKDOWN)
         return
 
     url = normalize_url(parts[1])
@@ -468,7 +468,8 @@ async def info_command(bot, msg):
         f"**Page Info**\n\n"
         f"URL: `{url}`\n"
         f"Domain: `{domain}`\n"
-        f"Safe: `{safe}`"
+        f"Safe: `{safe}`",
+        parse_mode=ParseMode.MARKDOWN
     )
 
 
