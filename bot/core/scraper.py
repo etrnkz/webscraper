@@ -313,15 +313,7 @@ async def start(bot, msg):
 
     text = f"{header}\n\n" + "\n".join(features) + f"\n\n<i>Send a URL to start.</i>"
 
-    # Send with plain markup; premium icons applied via botapi upgrade
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ℹ️ Info", callback_data="info")],
-        [InlineKeyboardButton("💻 Media", callback_data="media"), InlineKeyboardButton("💜 Premium", callback_data="premium")],
-    ])
-
-    sent = await msg.reply(text, reply_markup=markup, parse_mode=ParseMode.HTML)
-    # Upgrade to premium icons asynchronously
-    asyncio.create_task(upgrade_premium_markup(bot, sent.chat.id, sent.id, markup, premium_icons))
+    sent = await msg.reply(text, parse_mode=ParseMode.HTML)
 
 
 @bot.on_message(filters.private & filters.command('help'), group=-1)
