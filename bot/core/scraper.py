@@ -290,9 +290,9 @@ async def handle_callback(bot, callback_query):
 @bot.on_message(filters.private & filters.command('start'), group=-2)
 @safe_handler
 async def start(bot, msg):
-    # Premium custom emoji IDs
-    HEADER_EMOJI_ID = "5206456392407341290"   # 🕸
-    STAR_EMOJI_ID = "5319156402973849743"     # ⭐️
+    # Premium custom emoji IDs (must be integers for Telegram API)
+    HEADER_EMOJI_ID = 5206456392407341290   # 🕸
+    STAR_EMOJI_ID = 5319156402973849743     # ⭐️
 
     # Plain Unicode fallbacks
     header_emoji = "🕸"
