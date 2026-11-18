@@ -10,17 +10,17 @@ from datetime import datetime
 from typing import Optional
 
 from hydrogram import Client, filters
-from hydrogram.enums import ParseMode, MessageEntityType
-from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageEntity
+from hydrogram.enums import ParseMode
+from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot import config, constants, database as db
 from bot.errors import BrowserLaunchError
 from bot.queue.crawl_queue import CrawlJob, CrawlQueue, Outcome, JobState
 from bot.queue.resources import read_resources, derive_capacity, ResourceReading
-from bot.services.botapi import upgrade_premium_markup
 from bot.utils.validators import normalize_url, is_valid_url, is_safe_domain
 from bot.utils.helpers import extract_domain, format_file_size as format_size
 from bot.modules.zip_packager import create_zip
+from bot.utils.premium_text import PremiumText
 
 # In-memory user settings (cookies_file, subdomains preference)
 user_settings: dict[int, dict] = {}
@@ -290,42 +290,24 @@ async def handle_callback(bot, callback_query):
 @bot.on_message(filters.private & filters.command('start'), group=-2)
 @safe_handler
 async def start(bot, msg):
-    # Premium custom emoji IDs (must be integers for Telegram API)
-    HEADER_EMOJI_ID = 5206456392407341290   # 🕸
-    STAR_EMOJI_ID = 5319156402973849743     # ⭐️
-
-    # Plain Unicode fallbacks
-    header_emoji = "🕸"
-    star_emoji = "⭐️"
-
-    # Build header with custom emoji
-    header = f"{header_emoji} <b>Web Clone</b>"
-
-    # Build feature list with star emoji
     features = [
-        f"{star_emoji} Clone any website — HTML, assets, videos",
-        f"{star_emoji} Subdomain or same-domain scope",
-        f"{star_emoji} Cookie-based authenticated crawls",
-        f"{star_emoji} Resource-aware queue (auto-scales)",
-        f"{star_emoji} Cancel anytime, real-time progress",
+        "Clone any website — HTML, assets, videos",
+        "Subdomain or same-domain scope",
+        "Cookie-based authenticated crawls",
+        "Resource-aware queue (auto-scales)",
+        "Cancel anytime, real-time progress",
     ]
 
-    text = f"{header}\n\n" + "\n".join(features) + f"\n\n<i>Send a URL to start.</i>"
+    pt = PremiumText()
+    pt.emoji("WEB").add(" ").bold("Web Clone")
+    pt.add("\n\n")
+    for feature in features:
+        pt.emoji("STAR").add(f" {feature}")
+        pt.add("\n")
+    pt.add("\n").italic("Send a URL to start.")
+    text, entities = pt.build()
 
-    # Build custom emoji entities for premium emojis
-    entities = []
-
-    # Header emoji at offset 0 (length 1)
-    entities.append(MessageEntity(type=MessageEntityType.CUSTOM_EMOJI, offset=0, length=1, custom_emoji_id=HEADER_EMOJI_ID))
-
-    # Star emojis in each feature line
-    # Calculate offsets: header + "\n\n" = len(header) + 2
-    base_offset = len(header) + 2
-    for i, feature in enumerate(features):
-        star_offset = base_offset + sum(len(f) + 1 for f in features[:i])  # +1 for newline
-        entities.append(MessageEntity(type=MessageEntityType.CUSTOM_EMOJI, offset=star_offset, length=1, custom_emoji_id=STAR_EMOJI_ID))
-
-    sent = await msg.reply(text, parse_mode=ParseMode.HTML, entities=entities)
+    await msg.reply(text, entities=entities)
 
 
 @bot.on_message(filters.private & filters.command('help'), group=-1)
