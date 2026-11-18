@@ -29,7 +29,6 @@ Examples:
 /scope — Set default crawl scope
 /cookies — Upload cookies globally
 /stats — Your usage
-/start — Welcome message
 
 Contact [@etrnkx](https://t.me/etrnkx)
 """
