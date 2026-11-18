@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from hydrogram import Client, filters
+from hydrogram import Client, filters, StopPropagation, ContinuePropagation
 from hydrogram.enums import ParseMode
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
@@ -46,6 +46,8 @@ def safe_handler(handler):
     async def wrapper(bot, msg):
         try:
             return await handler(bot, msg)
+        except (StopPropagation, ContinuePropagation):
+            raise
         except Exception as e:
             logger.error(f"Handler error in {handler.__name__}: {e}", exc_info=True)
             # Try to send a generic error message to user
@@ -1371,8 +1373,14 @@ async def fallback_handler(bot, msg):
         return
     if msg.text.startswith("/"):
         return
-    if is_valid_url(msg.text.strip()):
+
+    clean_text = msg.text.strip()
+    for flag in ('subdomains', 'subdomain', 'cookies'):
+        clean_text = re.sub(r'\b' + re.escape(flag) + r'\b', '', clean_text, flags=re.IGNORECASE).strip()
+
+    if is_valid_url(clean_text):
         return
+
     await msg.reply(
         "Send me a URL to clone!\n\n"
         "Example: `https://example.com`\n\n"

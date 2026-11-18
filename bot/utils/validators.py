@@ -3,6 +3,10 @@ from urllib.parse import urlparse, urljoin
 import ipaddress
 import re
 
+DOMAIN_REGEX = re.compile(
+    r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$'
+)
+
 
 def normalize_url(url: str) -> str:
     """Auto-prepend https:// if no scheme present"""
@@ -26,6 +30,8 @@ def is_valid_url(url: str) -> bool:
             return False
 
         host = result.netloc.split(':')[0].lower()
+        if not host or ' ' in host:
+            return False
 
         blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1']
         if host in blocked:
@@ -35,10 +41,11 @@ def is_valid_url(url: str) -> bool:
             addr = ipaddress.ip_address(host)
             if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
                 return False
+            return True
         except ValueError:
             pass
 
-        return True
+        return bool(DOMAIN_REGEX.match(host))
     except Exception:
         return False
 
