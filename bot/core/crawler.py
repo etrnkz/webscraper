@@ -287,8 +287,6 @@ class WebCloner:
                     except Exception as e:
                         logger.error(f"Failed to load cookies: {e}")
 
-                page = await context.new_page()
-
                 await self.queue.put(0, (self.start_url, 0))
 
                 workers = [asyncio.create_task(self._worker(context))

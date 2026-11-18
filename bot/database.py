@@ -2,7 +2,7 @@
 import sqlite3
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +137,10 @@ def get_all_users():
 
 def get_active_users(hours=24):
     conn = get_conn()
-    cutoff = datetime.now().timestamp() - hours * 3600
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     return conn.execute(
-        "SELECT * FROM users WHERE last_seen IS NOT NULL ORDER BY last_seen DESC"
+        "SELECT * FROM users WHERE last_seen >= ? ORDER BY last_seen DESC",
+        (cutoff,)
     ).fetchall()
 
 
@@ -152,9 +153,10 @@ def get_top_users(limit=10):
 
 def get_statistics():
     conn = get_conn()
+    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
     total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     active = conn.execute("SELECT COUNT(*) FROM users WHERE last_seen >= ?",
-                          (datetime.now().isoformat(),)).fetchone()[0]
+                          (cutoff,)).fetchone()[0]
     reqs = conn.execute("SELECT COALESCE(SUM(total_requests),0) FROM users").fetchone()[0]
     errs = conn.execute("SELECT COALESCE(SUM(total_errors),0) FROM users").fetchone()[0]
     blocks = conn.execute("SELECT COALESCE(SUM(blocked_count),0) FROM users").fetchone()[0]

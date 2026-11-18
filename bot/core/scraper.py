@@ -172,9 +172,10 @@ async def check_force_join(user_id: int, msg: Message) -> bool:
     if usage >= config.FREE_USAGE_LIMIT:
         is_subscribed, not_subscribed = await force_subscribe.check_all_subscriptions(user_id)
         if not is_subscribed:
-            buttons = force_subscribe.create_join_buttons(not_subscribed)
+            buttons = await force_subscribe.create_join_buttons(not_subscribed)
+            fsub_msg = await force_subscribe.get_force_subscribe_message(not_subscribed)
             await msg.reply(
-                force_subscribe.get_force_subscribe_message(not_subscribed),
+                fsub_msg,
                 reply_markup=buttons
             )
             return False

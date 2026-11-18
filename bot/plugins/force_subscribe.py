@@ -17,21 +17,22 @@ class ForceSubscribe:
             self.channel_ids.append(channel_id)
             logger.info(f"Added force subscribe channel: {channel_id}")
     
-    def get_channel_info(self, channel_id):
+    async def get_channel_info(self, channel_id):
         """Get channel information"""
         if channel_id in self.channel_info:
             return self.channel_info[channel_id]
         try:
-            chat = self.bot.get_chat(channel_id)
+            chat = await self.bot.get_chat(channel_id)
             info = {'title': chat.title, 'username': chat.username, 'invite_link': None}
             try:
-                invite_link = self.bot.export_chat_invite_link(channel_id)
+                invite_link = await self.bot.export_chat_invite_link(channel_id)
                 info['invite_link'] = invite_link
             except Exception:
                 pass
             self.channel_info[channel_id] = info
             return info
-        except Exception:
+        except Exception as e:
+            logger.debug(f"get_channel_info failed for {channel_id}: {e}")
             return None
     
     async def check_all_subscriptions(self, user_id):
@@ -50,23 +51,29 @@ class ForceSubscribe:
                 pass
         return len(not_subscribed) == 0, not_subscribed
     
-    def get_force_subscribe_message(self, not_subscribed_channels):
+    async def get_force_subscribe_message(self, not_subscribed_channels):
         """Get force subscribe message"""
         channel_names = []
         for channel_id in not_subscribed_channels:
-            info = self.get_channel_info(channel_id)
-            if info:
+            info = await self.get_channel_info(channel_id)
+            if info and info.get('title'):
                 channel_names.append(info['title'])
+            else:
+                channel_names.append(str(channel_id))
         channels_text = '\n'.join([f"• {name}" for name in channel_names])
         return f"🔓 **Join to continue**\n\nPlease join:\n{channels_text}"
     
-    def create_join_buttons(self, not_subscribed_channels):
+    async def create_join_buttons(self, not_subscribed_channels):
         """Create join buttons"""
         buttons = []
         for channel_id in not_subscribed_channels:
-            info = self.get_channel_info(channel_id)
-            if info:
-                url = f"https://t.me/{info['username']}" if info['username'] else f"https://t.me/c/{str(channel_id).replace('-100', '')}"
-                buttons.append([InlineKeyboardButton(f"📢 Join", url=url)])
+            info = await self.get_channel_info(channel_id)
+            if info and info.get('username'):
+                url = f"https://t.me/{info['username']}"
+            elif info and info.get('invite_link'):
+                url = info['invite_link']
+            else:
+                url = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
+            buttons.append([InlineKeyboardButton("📢 Join", url=url)])
         buttons.append([InlineKeyboardButton("✅ Check", callback_data="check_subscription")])
         return InlineKeyboardMarkup(buttons)
